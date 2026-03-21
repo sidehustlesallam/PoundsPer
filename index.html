@@ -3,116 +3,203 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>£Per | Property Truth Engine</title>
+    <title>£PER | Property Audit Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="style.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
-        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.05); }
-        .card-gradient { background: linear-gradient(135deg, rgba(30,41,59,0.5) 0%, rgba(15,23,42,0.8) 100%); }
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;900&display=swap');
+        
+        :root {
+            --bg-audit: #05070a;
+            --panel-audit: #0c0e12;
+            --border-audit: #1a1e26;
+            --text-audit: #a1a7b3;
+            --accent-audit: #f8fafc; /* Pure white/near-white for data */
+            --warning-audit: #ef4444; /* High-contrast red */
+            --stable-audit: #22c55e; /* High-contrast green */
+        }
+
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--bg-audit); 
+            color: var(--text-audit); 
+            letter-spacing: -0.01em;
+        }
+
+        /* Mono font for raw data points */
+        .data-mono { font-family: 'Roboto Mono', monospace; color: var(--accent-audit); }
+
+        /* Forensic Panels */
+        .audit-panel {
+            background-color: var(--panel-audit);
+            border: 1px solid var(--border-audit);
+            border-radius: 4px; /* Harder edges for precision feel */
+        }
+
+        .audit-header {
+            text-transform: uppercase;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            color: #4b5563; /* Subtle label color */
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-audit);
+        }
+
+        /* High-Contrast Inputs */
+        input#mainInput {
+            background-color: #000;
+            border: 1px solid #2d3748;
+            color: #fff;
+            font-family: 'Roboto Mono', monospace;
+        }
+        input#mainInput:focus {
+            border-color: #fff;
+            outline: none;
+        }
+
+        /* Audit Indicators */
+        .indicator-red { color: var(--warning-audit); font-weight: bold; }
+        .indicator-green { color: var(--stable-audit); font-weight: bold; }
+        
+        /* New Address Selector Look */
+        #addressDropdown {
+            background-color: #000;
+            border: 1px solid #2d3748;
+            color: #fff;
+            border-radius: 4px;
+        }
     </style>
 </head>
-<body class="min-h-screen pb-12">
+<body class="min-h-screen">
 
-    <nav class="border-b border-slate-800 p-4 flex justify-between items-center glass sticky top-0 z-50">
-        <div class="flex items-center gap-2">
-            <span class="text-2xl font-black italic text-blue-500 tracking-tighter">£PER</span>
-            <span class="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 font-bold uppercase tracking-widest">v9.5 Truth Engine</span>
+    <nav class="p-4 border-b border-gray-900 flex justify-between items-center bg-black">
+        <div class="flex items-baseline gap-1">
+            <span class="text-xl font-black text-white tracking-tighter">£PER</span>
+            <span class="data-mono text-[9px] text-gray-600">AUDIT_ENGINE_V10.1</span>
         </div>
-        <div class="flex items-center gap-3 text-xs">
-            <div id="statusDot" class="w-2 h-2 rounded-full bg-slate-600 transition-all duration-500"></div>
-            <span id="statusText" class="text-slate-400 font-medium">System Ready</span>
+        <div class="flex items-center gap-3 data-mono text-[10px]">
+            <span id="statusText" class="text-gray-500">STANDBY_MODE</span>
+            <div id="statusDot" class="w-1.5 h-1.5 bg-gray-700 rounded-full"></div>
         </div>
     </nav>
 
-    <main class="max-w-6xl mx-auto p-6 space-y-8">
+    <main class="max-w-7xl mx-auto p-6 md:p-10 space-y-10">
         
-        <section class="max-w-3xl mx-auto text-center space-y-6 py-12">
-            <h2 class="text-4xl font-black tracking-tight leading-tight italic">Kill Information <span class="text-blue-500">Asymmetry.</span></h2>
-            <div class="relative group">
+        <section class="max-w-4xl mx-auto py-12 border-b border-gray-900">
+            <h1 class="text-xs uppercase font-black text-gray-600 tracking-widest mb-3">Asset Intelligence Unit</h1>
+            <div class="flex flex-col md:flex-row gap-3">
                 <input type="text" id="mainInput" 
-                    placeholder="Paste Rightmove/Zoopla URL or Postcode..."
+                    placeholder="ENTER_LINK_OR_POSTCODE_>_"
                     onkeydown="if(event.key === 'Enter') handleDiscovery()"
-                    class="w-full bg-slate-900/50 border-2 border-slate-800 rounded-2xl px-6 py-5 text-lg outline-none focus:border-blue-500 transition-all font-medium shadow-2xl">
-                <button onclick="handleDiscovery()" class="absolute right-3 top-3 bottom-3 bg-blue-600 hover:bg-blue-500 text-white px-8 rounded-xl font-bold transition-all shadow-lg">ANALYZE</button>
+                    class="flex-grow px-5 py-4 text-sm rounded transition-all">
+                <button onclick="handleDiscovery()" 
+                    class="bg-white hover:bg-gray-200 text-black px-10 py-4 rounded text-xs font-black uppercase tracking-widest transition-all">
+                    RUN_AUDIT
+                </button>
             </div>
 
-            <div id="addressSelectorContainer" class="hidden animate-in">
-                <select id="addressDropdown" onchange="selectAddress()"
-                    class="w-full bg-slate-800 border border-blue-500/50 rounded-xl px-4 py-3 text-sm outline-none text-white cursor-pointer hover:bg-slate-700 transition-colors shadow-xl">
-                    <option value="">-- Choose specific property address --</option>
+            <div id="addressSelectorContainer" class="hidden mt-4 p-4 border border-dashed border-gray-800 rounded bg-black/30">
+                <label class="data-mono text-[10px] text-gray-500 mb-2 block">SELECT_SPECIFIC_ASSET_UNIT_></label>
+                <select id="addressDropdown" onchange="selectAddress()" class="w-full px-4 py-3 text-xs">
+                    <option value="">-- RESOLVE ADDRESS --</option>
                 </select>
             </div>
         </section>
 
-        <section id="dashboard" class="hidden grid grid-cols-1 md:grid-cols-3 gap-6 animate-in">
+        <section id="dashboard" class="hidden space-y-8 animate-in">
             
-            <div class="md:col-span-1 space-y-6">
-                <div class="glass p-6 rounded-3xl card-gradient border-t-4 border-blue-500">
-                    <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Identified Asset</span>
-                    <h3 id="displayAddress" class="text-xl font-bold mt-1 leading-tight text-white italic">--</h3>
-                    <div class="mt-4 flex gap-2">
-                        <a id="mapLink" target="_blank" class="text-[10px] bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg font-bold border border-slate-700 block text-center flex-1 transition-colors">LIVE MAP</a>
-                        <button class="text-[10px] bg-blue-600/10 text-blue-400 px-3 py-2 rounded-lg font-bold border border-blue-500/20 block text-center flex-1">EXPORT DATA</button>
+            <div class="audit-panel p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <div class="audit-header mb-2">Subject Asset: Primary Key</div>
+                    <h2 id="displayAddress" class="text-2xl font-black text-white italic tracking-tight">--</h2>
+                    <a id="mapLink" target="_blank" class="data-mono text-[10px] text-blue-400 hover:text-white mt-1 inline-block">[VIEW_EXACT_LOCATION_MAP]</a>
+                </div>
+                <button class="border border-gray-800 text-gray-500 hover:text-white hover:border-white px-4 py-2 rounded text-[10px] font-bold uppercase tracking-widest data-mono">
+                    LOG_REPORT
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                <div class="audit-panel p-6 space-y-6">
+                    <div>
+                        <div class="audit-header">Financial Audit: Street Average</div>
+                        <div class="flex items-baseline gap-2 mt-3">
+                            <span id="valMetric" class="text-5xl font-black text-white">£0</span>
+                            <span class="data-mono text-xs text-gray-500">/m²</span>
+                        </div>
+                        <p class="text-[10px] text-gray-600 mt-2 leading-relaxed">Derived from nearest 25 Land Registry (PPI) transactions in sector.</p>
+                    </div>
+                    
+                    <div class="border-t border-gray-900 pt-6">
+                        <div class="audit-header">Structural Audit: Floor Area</div>
+                        <div class="flex items-baseline gap-2 mt-3">
+                            <span id="displaySize" class="text-4xl font-black text-white">0</span>
+                            <span class="data-mono text-xs text-gray-500">m² (GIA)</span>
+                        </div>
+                        <p class="text-[10px] text-gray-600 mt-2 leading-relaxed">Official Domestic EPC Register measurement.</p>
                     </div>
                 </div>
 
-                <div class="glass p-6 rounded-3xl card-gradient">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Scale & Energy</span>
-                            <div class="text-3xl font-black mt-2 text-white"><span id="displaySize">0</span><span class="text-sm font-normal text-slate-500 ml-1">m²</span></div>
+                <div class="audit-panel p-6 space-y-6">
+                    <div>
+                        <div class="audit-header">Environmental Risk: Hazards</div>
+                        <div class="mt-4 space-y-3 data-mono text-xs">
+                            <div class="flex justify-between items-center">
+                                <span>Flood_Sensors:</span>
+                                <span id="floodStatus" class="indicator-green">--</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span>Radon_Potential:</span>
+                                <span id="radonStatus" class="indicator-green">--</span>
+                            </div>
                         </div>
-                        <div id="epcBadge" class="text-4xl font-black drop-shadow-lg">--</div>
+                    </div>
+                    
+                    <div class="border-t border-gray-900 pt-6">
+                        <div class="audit-header">Geo-Forensic Insight</div>
+                        <div id="riskLevel" class="mt-3 p-3 text-[10px] rounded leading-relaxed data-mono">
+                            -- Risk analysis pending selection.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="audit-panel p-6 space-y-6">
+                    <div>
+                        <div class="audit-header">Social Audit: Local Education</div>
+                        <div id="schoolList" class="mt-4 space-y-3 data-mono text-[10px]">
+                            </div>
+                    </div>
+                    
+                    <div class="border-t border-gray-900 pt-6">
+                        <div class="audit-header">Infrastructure Audit: Connectivity</div>
+                        <div id="broadbandSpeed" class="mt-4 data-mono text-xs space-y-2">
+                            </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="audit-panel overflow-hidden">
+                <div class="p-4 bg-black border-b border-gray-900 flex justify-between items-center">
+                    <h4 class="text-xs font-black uppercase tracking-widest text-gray-500">EPC Forensic Breakdown</h4>
+                    <div id="epcBadge" class="data-mono text-xl font-black px-3 py-1 rounded">--</div>
+                </div>
+                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-8 data-mono text-xs text-gray-400">
+                    <div class="leading-relaxed">
+                        <p>Energy_Rating: <span id="epcRatingRaw" class="text-white font-bold">--</span></p>
+                        <p>Potential_Rating: <span id="epcPotentialRaw" class="text-white">--</span></p>
+                    </div>
+                    <div class="border-l border-gray-900 pl-6 leading-relaxed">
+                        <p>Primary_Heating: <span id="epcHeating" class="text-white">--</span></p>
                     </div>
                 </div>
             </div>
 
-            <div class="md:col-span-2 space-y-6">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="glass p-6 rounded-3xl card-gradient">
-                        <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Street Value (£/m²)</span>
-                        <div id="valMetric" class="text-4xl font-black mt-2 text-white">£0</div>
-                        <p class="text-[10px] text-slate-500 mt-2 font-medium">Derived from recent Land Registry transactions</p>
-                    </div>
-
-                    <div class="glass p-6 rounded-3xl card-gradient">
-                        <div class="flex justify-between items-center">
-                            <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Environmental Risk</span>
-                            <div id="riskLevel" class="text-[9px] px-2 py-0.5 rounded border font-bold">--</div>
-                        </div>
-                        <div class="mt-4 space-y-3">
-                            <div class="flex justify-between items-center text-xs">
-                                <span class="text-slate-400">Flood Sensors</span>
-                                <span id="floodStatus" class="font-bold">--</span>
-                            </div>
-                            <div class="flex justify-between items-center text-xs">
-                                <span class="text-slate-400">Radon Potential</span>
-                                <span id="radonStatus" class="font-bold">--</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="glass rounded-3xl overflow-hidden border border-slate-800">
-                    <div class="p-4 bg-slate-800/50 border-b border-slate-800">
-                        <h4 class="text-xs font-black uppercase tracking-widest text-slate-400">Infrastructure & Amenities</h4>
-                    </div>
-                    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div>
-                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Connectivity</span>
-                            <div id="broadbandSpeed" class="mt-2">--</div>
-                        </div>
-                        <div>
-                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Nearest Education</span>
-                            <div id="schoolList" class="mt-3 space-y-3">--</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </section>
+
     </main>
+
     <script src="app.js"></script>
 </body>
 </html>
