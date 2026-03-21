@@ -1,6 +1,6 @@
 /**
- * £Per | Property Truth Engine - Core Logic v9.4
- * Modules: EPC, Land Registry (PPI), Environment Agency, GetTheData (Broadband & Schools)
+ * £Per | Property Truth Engine v9.5
+ * Orchestrates: EPC, HMLR, Environment Agency, Radon, Schools, & Connectivity.
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/"; 
@@ -8,17 +8,18 @@ const EPC_AUTH = "sidehustlesallam@gmail.com:8e8bcb44ea70c2ca63b3116dd63a1a307ba
 
 let currentEpcRows = [];
 
-// --- 1. SEARCH ENTRY POINT ---
+// --- 1. ENTRY HANDLER ---
 async function handleDiscovery() {
     const input = document.getElementById('mainInput').value.trim();
     
     document.getElementById('addressSelectorContainer').classList.add('hidden');
     document.getElementById('dashboard').classList.add('hidden');
 
+    // Extract Postcode from string or URL
     const pcMatch = input.match(/([A-Z][A-HJ-Y]?[0-9][A-Z0-9]?\s?[0-9][A-Z]{2})/i);
     
     if (!pcMatch) {
-        updateStatus("Invalid input. Provide a UK postcode or URL.", "error");
+        updateStatus("Enter a valid UK postcode or property URL", "error");
         return;
     }
 
@@ -32,24 +33,19 @@ async function handleDiscovery() {
         });
         const data = await res.json();
         
-        if (!data.rows || data.rows.length === 0) {
-            throw new Error("No address data found for this postcode.");
-        }
+        if (!data.rows || data.rows.length === 0) throw new Error("No property data found in register.");
 
         currentEpcRows = data.rows;
         populateAddressDropdown(data.rows);
-        updateStatus("Choose a property to continue.", "success");
-
-    } catch (err) {
-        updateStatus(err.message, "error");
-    }
+        updateStatus("Select target address to proceed.", "success");
+    } catch (err) { updateStatus(err.message, "error"); }
 }
 
-// --- 2. UI: ADDRESS SELECTOR ---
+// --- 2. ADDRESS SELECTOR ---
 function populateAddressDropdown(rows) {
     const container = document.getElementById('addressSelectorContainer');
     const dropdown = document.getElementById('addressDropdown');
-    dropdown.innerHTML = '<option value="">-- Select specific house/flat address --</option>';
+    dropdown.innerHTML = '<option value="">-- Click to select exact property --</option>';
     
     rows.sort((a, b) => a.address.localeCompare(b.address, undefined, {numeric: true})).forEach((row, index) => {
         const opt = document.createElement('option');
@@ -60,13 +56,13 @@ function populateAddressDropdown(rows) {
     container.classList.remove('hidden');
 }
 
-// --- 3. DATA ORCHESTRATOR ---
+// --- 3. THE ORCHESTRATOR ---
 async function selectAddress() {
     const index = document.getElementById('addressDropdown').value;
     if (index === "") return;
 
-    const selectedEpc = currentEpcRows[index];
-    const pc = selectedEpc.postcode;
+    const epc = currentEpcRows[index];
+    const pc = epc.postcode;
     
     updateStatus("Retrieving multi-point intelligence...", "loading");
 
@@ -74,123 +70,92 @@ async function selectAddress() {
         const lrTarget = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(pc)}&_limit=50`;
         const floodTarget = `https://environment.data.gov.uk/flood-monitoring/id/stations?postcode=${encodeURIComponent(pc)}`;
 
-        const [lrRes, floodRes, connData, schoolData] = await Promise.all([
+        const [lrRes, floodRes, connData, schoolData, radonData] = await Promise.all([
             fetch(`${PROXY_URL}?url=${encodeURIComponent(lrTarget)}`),
             fetch(`${PROXY_URL}?url=${encodeURIComponent(floodTarget)}`),
             fetchConnectivity(pc),
-            fetchSchools(pc)
+            fetchSchools(pc),
+            fetchRadon(pc)
         ]);
 
         const lrData = await lrRes.json();
         const floodData = await floodRes.json();
 
-        renderFinalUI(selectedEpc, lrData.result.items, floodData.items, connData, schoolData);
-        updateStatus("Analysis Complete.", "success");
-
-    } catch (err) {
-        updateStatus("Engine Error: " + err.message, "error");
-    }
+        renderUI(epc, lrData.result.items, floodData.items, connData, schoolData, radonData);
+        updateStatus("Truth Synchronized.", "success");
+    } catch (err) { updateStatus("Sync Error: " + err.message, "error"); }
 }
 
-// --- 4. DATA FETCH: CONNECTIVITY ---
+// --- 4. INDIVIDUAL TRUTH MODULES ---
 async function fetchConnectivity(pc) {
     const target = `https://api.getthedata.com/broadband/postcode/${pc.replace(/\s/g, '')}`;
     try {
         const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(target)}`);
-        const data = await res.json();
-        if (data.status === "success" && data.data) {
-            return {
-                maxDownload: data.data.average_download_speed_mbps || "N/A",
-                type: data.data.full_fibre_availability === "Y" ? "Full Fibre (FTTP)" : "Standard/Superfast",
-                isUltrafast: data.data.ultrafast_availability === "Y"
-            };
-        }
-        return null;
+        const d = await res.json();
+        return d.data ? { speed: d.data.average_download_speed_mbps, type: d.data.full_fibre_availability === "Y" ? "Full Fibre" : "Superfast", isUltra: d.data.ultrafast_availability === "Y" } : null;
     } catch (e) { return null; }
 }
 
-// --- 5. DATA FETCH: SCHOOLS ---
 async function fetchSchools(pc) {
     const target = `https://api.getthedata.com/schools/postcode/${pc.replace(/\s/g, '')}`;
     try {
         const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(target)}`);
-        const data = await res.json();
-        if (data.status === "success" && data.data) {
-            return data.data.slice(0, 3).map(s => ({
-                name: s.institution_name,
-                phase: s.statutory_low_age < 11 ? "Primary" : "Secondary",
-                rating: s.ofsted_rating_name || "Unrated",
-                distance: s.distance_miles ? parseFloat(s.distance_miles).toFixed(1) : "?"
-            }));
-        }
-        return null;
+        const d = await res.json();
+        return d.data ? d.data.slice(0, 3).map(s => ({ name: s.institution_name, rating: s.ofsted_rating_name || "Unrated", dist: parseFloat(s.distance_miles).toFixed(1) })) : null;
     } catch (e) { return null; }
 }
 
-// --- 6. DATA RENDERING ---
-function renderFinalUI(epc, sales, floodStations, connectivity, schools) {
-    // Basic Details
-    document.getElementById('displayAddress').innerText = epc.address;
-    document.getElementById('mapLink').href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(epc.address + ' ' + epc.postcode)}`;
+async function fetchRadon(pc) {
+    const target = `https://api.getthedata.com/radon/postcode/${pc.replace(/\s/g, '')}`;
+    try {
+        const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(target)}`);
+        const d = await res.json();
+        return d.data ? { pc: d.data.radon_potential_percentage, high: parseFloat(d.data.radon_potential_percentage) >= 1 } : null;
+    } catch (e) { return null; }
+}
 
-    // EPC / Size
+// --- 5. RENDER ENGINE ---
+function renderUI(epc, sales, flood, conn, schools, radon) {
+    document.getElementById('displayAddress').innerText = epc.address;
+    document.getElementById('mapLink').href = `https://www.google.com/maps/search/${encodeURIComponent(epc.address + ' ' + epc.postcode)}`;
+
+    // Scale & EPC
     const area = parseFloat(epc['total-floor-area']);
     document.getElementById('displaySize').innerText = Math.round(area);
-    const epcBadge = document.getElementById('epcBadge');
-    const rating = epc['current-energy-rating'];
-    epcBadge.innerText = rating;
-    epcBadge.className = `text-4xl font-black epc-${rating.toLowerCase()}`;
+    const badge = document.getElementById('epcBadge');
+    badge.innerText = epc['current-energy-rating'];
+    badge.className = `text-4xl font-black epc-${epc['current-energy-rating'].toLowerCase()}`;
 
-    // Valuation Logic
-    let totalSqmPrice = 0, count = 0;
-    sales.forEach(s => {
-        if (s.latestTransaction && area > 0) {
-            totalSqmPrice += (s.latestTransaction.pricePaid / area);
-            count++;
-        }
-    });
-    const avgVal = count > 0 ? Math.round(totalSqmPrice / count) : 0;
-    document.getElementById('valMetric').innerText = avgVal > 0 ? `£${avgVal.toLocaleString()}` : "N/A";
+    // Valuation
+    let totalSqm = 0, count = 0;
+    sales.forEach(s => { if (s.latestTransaction && area > 0) { totalSqm += (s.latestTransaction.pricePaid / area); count++; }});
+    document.getElementById('valMetric').innerText = count > 0 ? `£${Math.round(totalSqm/count).toLocaleString()}` : "N/A";
 
-    // Environmental Risk
-    const floodEl = document.getElementById('floodRisk');
-    if (floodStations && floodStations.length > 0) {
-        floodEl.innerText = "Monitoring Zone";
-        floodEl.className = "text-xl font-bold mt-2 text-orange-400 italic";
-    } else {
-        floodEl.innerText = "Low Direct Risk";
-        floodEl.className = "text-xl font-bold mt-2 text-green-400 italic";
-    }
+    // Risk UI
+    const floodStatus = document.getElementById('floodStatus');
+    floodStatus.innerText = flood.length > 0 ? "Station Active" : "No Nearby Stations";
+    floodStatus.className = flood.length > 0 ? "text-orange-400 font-bold" : "text-green-500 font-bold";
+    
+    const radonStatus = document.getElementById('radonStatus');
+    radonStatus.innerText = radon ? (radon.high ? `${radon.pc}% Potential` : "Low (<1%)") : "N/A";
+    radonStatus.className = radon && radon.high ? "text-orange-400 font-bold" : "text-green-500 font-bold";
+
+    const riskBadge = document.getElementById('riskLevel');
+    const isRisk = flood.length > 0 || (radon && radon.high);
+    riskBadge.innerText = isRisk ? "WARNING" : "STABLE";
+    riskBadge.className = `text-[9px] px-2 py-0.5 rounded border font-bold ${isRisk ? 'bg-orange-950 text-orange-400 border-orange-800' : 'bg-green-950 text-green-500 border-green-800'}`;
 
     // Connectivity
-    const broadbandEl = document.getElementById('broadbandSpeed');
-    if (connectivity) {
-        broadbandEl.innerHTML = `
-            <div class="flex items-baseline gap-2">
-                <span class="text-xl font-bold text-white">${connectivity.maxDownload}</span>
-                <span class="text-xs text-slate-500 font-normal">Mbps Avg</span>
-            </div>
-            <div class="text-[10px] ${connectivity.isUltrafast ? 'text-green-400' : 'text-slate-500'} font-bold uppercase tracking-widest mt-1">
-                ${connectivity.type}
-            </div>`;
-    }
+    document.getElementById('broadbandSpeed').innerHTML = conn ? `
+        <div class="flex items-baseline gap-2 text-white"><span class="text-xl font-bold">${conn.speed}</span><span class="text-[9px] text-slate-500 uppercase">Mbps</span></div>
+        <div class="text-[9px] font-bold uppercase ${conn.isUltra ? 'text-green-400' : 'text-slate-500'}">${conn.type}</div>` : "--";
 
     // Schools
-    const schoolEl = document.getElementById('schoolList');
-    if (schools && schools.length > 0) {
-        schoolEl.innerHTML = schools.map(s => `
-            <div class="flex justify-between items-center border-l-2 border-slate-800 pl-3 group hover:border-blue-500 transition-all">
-                <div>
-                    <div class="text-[11px] font-bold text-white truncate w-40">${s.name}</div>
-                    <div class="text-[9px] text-slate-500 uppercase">${s.phase} • ${s.distance} mi</div>
-                </div>
-                <div class="text-[9px] font-black px-2 py-1 rounded bg-slate-800/50 ${s.rating.includes('Outstanding') ? 'text-green-400 border border-green-500/20' : 'text-slate-400'}">
-                    ${s.rating.split(' ')[0]}
-                </div>
-            </div>`).join('');
-    } else {
-        schoolEl.innerHTML = `<div class="text-xs text-slate-600 italic">No school data found.</div>`;
-    }
+    document.getElementById('schoolList').innerHTML = schools ? schools.map(s => `
+        <div class="flex justify-between items-center text-[10px] border-l border-slate-700 pl-2">
+            <span class="truncate w-32 font-bold">${s.name}</span>
+            <span class="${s.rating.includes('Outstanding') ? 'text-green-400' : 'text-slate-400'} font-black">${s.rating.split(' ')[0]}</span>
+        </div>`).join('') : "No local data.";
 
     document.getElementById('dashboard').classList.remove('hidden');
 }
@@ -199,5 +164,5 @@ function updateStatus(msg, type) {
     const text = document.getElementById('statusText');
     const dot = document.getElementById('statusDot');
     text.innerText = msg;
-    dot.className = `w-2 h-2 rounded-full ${type === 'loading' ? 'bg-blue-500 animate-ping' : type === 'error' ? 'bg-red-500 shadow-[0_0_8px_red]' : 'bg-green-500 shadow-[0_0_8px_green]'}`;
+    dot.className = `w-2 h-2 rounded-full ${type === 'loading' ? 'bg-blue-500 animate-ping' : type === 'error' ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-green-500 shadow-[0_0_10px_green]'}`;
 }
