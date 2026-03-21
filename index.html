@@ -25,21 +25,21 @@
 
         <div class="flex-1">
             <div class="flex items-center justify-between mb-8">
-                <h1 class="text-3xl font-black tracking-tighter text-blue-500">Pounds<span class="text-white">Per</span></h1>
-                <div class="text-[10px] text-slate-500 uppercase tracking-widest border border-slate-700 px-2 py-1 rounded font-bold">V4 History Engine</div>
+                <h1 class="text-3xl font-black tracking-tighter text-blue-500 text-6xl">£Per</h1>
+                <div class="text-[10px] text-slate-500 uppercase tracking-widest border border-slate-700 px-2 py-1 rounded font-bold">V5 Bulletproof</div>
             </div>
 
             <div class="glass rounded-2xl p-6 mb-8 shadow-2xl">
                 <div class="flex flex-col md:flex-row gap-4">
-                    <input type="text" id="postcode" placeholder="Enter Postcode (e.g. SW1A 1AA)" 
+                    <input type="text" id="postcode" placeholder="ENTER POSTCODE" 
                         onkeydown="if(event.key === 'Enter') runPoundsPer()"
                         class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all text-white placeholder-slate-600 uppercase">
                     <button onclick="runPoundsPer()" id="btn"
-                        class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-10 py-3 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-blue-900/40">
-                        Analyze
+                        class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-10 py-3 rounded-xl transition-all disabled:opacity-50">
+                        ANALYZE
                     </button>
                 </div>
-                <p id="status" class="text-xs text-slate-500 mt-4 italic">Hit 'Enter' to search instantly.</p>
+                <p id="status" class="text-xs text-slate-500 mt-4 italic">Bypassing security protocols... Ready.</p>
             </div>
 
             <div id="results" class="hidden space-y-6 animate-in fade-in duration-700">
@@ -47,12 +47,12 @@
                     <div class="glass p-8 rounded-2xl text-center border-t-4 border-t-blue-500">
                         <span class="text-slate-400 text-xs uppercase font-bold tracking-widest">Avg Value</span>
                         <div id="avgPrice" class="text-5xl font-black mt-2 text-white">£0</div>
-                        <div class="text-blue-400 text-xs font-bold mt-1 uppercase tracking-tighter tracking-widest">Per Square Metre</div>
+                        <div class="text-blue-400 text-[10px] font-bold mt-1 uppercase tracking-widest">Per Square Metre</div>
                     </div>
                     
                     <div class="glass p-8 rounded-2xl md:col-span-2 flex flex-col justify-center px-10">
                         <div class="flex justify-between items-center">
-                            <span class="text-slate-400 text-sm font-medium">Verified Property Matches</span>
+                            <span class="text-slate-400 text-sm font-medium">Linked Records Found</span>
                             <span id="matchCount" class="text-2xl font-black text-white">0</span>
                         </div>
                         <div class="w-full bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
@@ -65,8 +65,8 @@
                     <table class="w-full text-left text-sm">
                         <thead class="bg-slate-800/80 text-slate-500 text-[10px] uppercase font-black">
                             <tr>
-                                <th class="px-6 py-4">Property Address</th>
-                                <th class="px-6 py-4">Sold Price</th>
+                                <th class="px-6 py-4">Address</th>
+                                <th class="px-6 py-4">Last Sale</th>
                                 <th class="px-6 py-4 text-right">£/m²</th>
                             </tr>
                         </thead>
@@ -80,13 +80,18 @@
     <script>
         const EPC_AUTH = "sidehustlesallam@gmail.com:8e8bcb44ea70c2ca63b3116dd63a1a307ba3159d";
         let history = [];
+        let currentPC = "";
+
+        // This function handles the Land Registry data when it arrives via JSONP
+        window.handleLRData = function(data) {
+            processFinalData(data.result.items);
+        };
 
         function updateHistoryUI(pc, avg) {
             if (!history.find(h => h.pc === pc)) {
                 history.unshift({ pc, avg });
                 if (history.length > 8) history.pop();
             }
-            
             const list = document.getElementById('historyList');
             list.innerHTML = history.map(h => `
                 <div class="glass border border-slate-800 p-3 rounded-xl history-item transition-all cursor-pointer flex justify-between items-center" onclick="document.getElementById('postcode').value='${h.pc}'; runPoundsPer();">
@@ -97,25 +102,24 @@
         }
 
         async function runPoundsPer() {
-            const input = document.getElementById('postcode').value.toUpperCase().trim();
-            if (!input) return;
+            currentPC = document.getElementById('postcode').value.toUpperCase().trim();
+            if (!currentPC) return;
 
-            const btn = document.getElementById('btn');
-            const status = document.getElementById('status');
-            const results = document.getElementById('results');
+            document.getElementById('btn').disabled = true;
+            document.getElementById('status').innerHTML = `<span class="text-blue-400 animate-pulse font-bold">BYPASSING CORS RESTRICTIONS...</span>`;
             
-            btn.disabled = true;
-            status.innerHTML = `<span class="text-blue-400 animate-pulse font-bold">CROSS-REFERENCING REGISTERS...</span>`;
-            
+            // Step 1: Request Land Registry data using JSONP (Script Injection)
+            const script = document.createElement('script');
+            script.src = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(currentPC)}&_limit=50&callback=handleLRData`;
+            document.body.appendChild(script);
+            // Cleanup script tag after loading
+            script.onload = () => script.remove();
+        }
+
+        async function processFinalData(sales) {
             try {
-                // 1. Fetch Land Registry Data
-                const lrRes = await fetch(`https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(input)}&_limit=50`);
-                if (!lrRes.ok) throw new Error("Government server timeout.");
-                const lrData = await lrRes.json();
-                const sales = lrData.result.items;
-
-                // 2. Fetch EPC Data
-                const epcRes = await fetch(`https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${input.replace(/\s/g, '')}`, {
+                // Step 2: Fetch EPC Data (EPC API allows direct fetch, no trickery needed)
+                const epcRes = await fetch(`https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${currentPC.replace(/\s/g, '')}`, {
                     headers: { "Authorization": "Basic " + btoa(EPC_AUTH), "Accept": "application/json" }
                 });
                 const epcData = await epcRes.json();
@@ -136,7 +140,7 @@
                         totalSqmPrice += sqmPrice;
                         matchCount++;
                         tableHtml += `
-                            <tr class="hover:bg-blue-500/5 transition-colors border-b border-slate-800/50">
+                            <tr class="hover:bg-blue-500/5 transition-colors">
                                 <td class="px-6 py-5 font-semibold text-slate-100">${addrLine}</td>
                                 <td class="px-6 py-5 text-slate-500 italic">£${price.toLocaleString()}</td>
                                 <td class="px-6 py-5 text-blue-400 font-black text-right">£${sqmPrice.toLocaleString()}</td>
@@ -150,16 +154,16 @@
                     document.getElementById('matchCount').innerText = matchCount;
                     document.getElementById('matchBar').style.width = Math.min((matchCount / sales.length) * 100, 100) + "%";
                     document.getElementById('tableBody').innerHTML = tableHtml;
-                    results.classList.remove('hidden');
-                    status.innerText = "Data updated.";
-                    updateHistoryUI(input, avg);
+                    document.getElementById('results').classList.remove('hidden');
+                    document.getElementById('status').innerText = "Analysis Successful.";
+                    updateHistoryUI(currentPC, avg);
                 } else {
-                    status.innerHTML = `<span class="text-orange-400 italic">Found price data but house sizes (EPC) are unavailable for this postcode.</span>`;
+                    document.getElementById('status').innerHTML = `<span class="text-orange-400 italic">No matching EPC size data found for these sales.</span>`;
                 }
             } catch (err) {
-                status.innerHTML = `<span class="text-red-500 font-bold">ERROR: ${err.message}</span>`;
+                document.getElementById('status').innerHTML = `<span class="text-red-500 font-bold">ERROR: ${err.message}</span>`;
             } finally {
-                btn.disabled = false;
+                document.getElementById('btn').disabled = false;
             }
         }
     </script>
