@@ -3,103 +3,190 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PoundsPer | Property Intelligence</title>
+    <title>£Per | Property Intelligence</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
         .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
+        .history-item:hover { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.5); }
+        input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
     </style>
 </head>
 <body class="min-h-screen p-4 md:p-8">
 
     <div class="max-w-6xl mx-auto flex flex-col md:flex-row gap-8">
+        
         <div class="w-full md:w-64 space-y-4">
-            <h2 class="text-xs font-black uppercase tracking-widest text-slate-500 px-2">History</h2>
-            <div id="historyList" class="space-y-2"></div>
+            <h2 class="text-xs font-black uppercase tracking-widest text-slate-500 px-2">Recent Searches</h2>
+            <div id="historyList" class="space-y-2">
+                <p class="text-xs text-slate-600 px-2 italic text-center py-4 border border-dashed border-slate-800 rounded-xl">No history yet</p>
+            </div>
         </div>
 
         <div class="flex-1">
             <div class="flex items-center justify-between mb-8">
-                <h1 class="text-3xl font-black tracking-tighter text-blue-500 text-6xl">£Per</h1>
-                <div class="text-[10px] text-slate-500 uppercase tracking-widest border border-slate-700 px-2 py-1 rounded font-bold">V6 Pro Bridge</div>
+                <h1 class="text-5xl font-black tracking-tighter text-blue-500 italic">£Per</h1>
+                <div class="flex flex-col items-end">
+                    <div class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Cloudflare Bridge Active</div>
+                    <div class="h-1 w-12 bg-green-500 rounded-full mt-1"></div>
+                </div>
             </div>
 
-            <div class="glass rounded-2xl p-6 mb-8">
+            <div class="glass rounded-3xl p-6 mb-8 shadow-2xl">
                 <div class="flex flex-col md:flex-row gap-4">
-                    <input type="text" id="postcode" placeholder="ENTER POSTCODE" 
+                    <input type="text" id="postcode" placeholder="ENTER POSTCODE (E.G. SW1A 1AA)" 
                         onkeydown="if(event.key === 'Enter') runPoundsPer()"
-                        class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-lg outline-none text-white uppercase">
-                    <button onclick="runPoundsPer()" id="btn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-10 py-3 rounded-xl">ANALYZE</button>
+                        class="flex-1 bg-slate-900 border border-slate-700 rounded-2xl px-6 py-4 text-xl outline-none transition-all text-white placeholder-slate-600 uppercase font-bold">
+                    <button onclick="runPoundsPer()" id="btn"
+                        class="bg-blue-600 hover:bg-blue-500 text-white font-black px-12 py-4 rounded-2xl transition-all disabled:opacity-50 shadow-lg shadow-blue-900/40 uppercase tracking-widest">
+                        Analyze
+                    </button>
                 </div>
-                <p id="status" class="text-xs text-slate-500 mt-4">Bridge Status: <span class="text-green-500">Connected</span></p>
+                <div id="status" class="text-xs text-slate-500 mt-4 font-medium flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-slate-700"></span>
+                    Ready for new query
+                </div>
             </div>
 
-            <div id="results" class="hidden space-y-6">
+            <div id="results" class="hidden space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="glass p-8 rounded-2xl text-center border-t-4 border-t-blue-500">
-                        <span class="text-slate-400 text-xs uppercase font-bold tracking-widest">Avg Value</span>
+                    <div class="glass p-8 rounded-3xl text-center border-b-4 border-b-blue-600">
+                        <span class="text-slate-400 text-[10px] uppercase font-black tracking-[0.2em]">Average Value</span>
                         <div id="avgPrice" class="text-5xl font-black mt-2 text-white">£0</div>
+                        <div class="text-blue-500 text-[10px] font-black mt-1 uppercase">Per Square Metre</div>
                     </div>
-                    <div class="glass p-8 rounded-2xl md:col-span-2 flex flex-col justify-center">
-                        <div class="flex justify-between items-center"><span class="text-slate-400 text-sm">Matches Found</span><span id="matchCount" class="text-2xl font-black text-white">0</span></div>
-                        <div class="w-full bg-slate-800 h-2 rounded-full mt-3"><div id="matchBar" class="bg-blue-500 h-full" style="width: 0%"></div></div>
+                    
+                    <div class="glass p-8 rounded-3xl md:col-span-2 flex flex-col justify-center px-10">
+                        <div class="flex justify-between items-end mb-4">
+                            <div>
+                                <span class="text-slate-400 text-[10px] uppercase font-black tracking-[0.2em]">Market Sample</span>
+                                <div class="text-2xl font-black text-white"><span id="matchCount">0</span> Properties</div>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-slate-400 text-[10px] uppercase font-black tracking-[0.2em]">Reliability</span>
+                                <div id="reliabilityText" class="text-green-400 font-bold">High</div>
+                            </div>
+                        </div>
+                        <div class="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
+                            <div id="matchBar" class="bg-blue-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                        </div>
                     </div>
                 </div>
-                <div class="glass rounded-2xl overflow-hidden shadow-2xl"><table class="w-full text-left text-sm"><tbody id="tableBody" class="divide-y divide-slate-800/50 text-slate-300"></tbody></table></div>
+
+                <div class="glass rounded-3xl overflow-hidden shadow-2xl border border-slate-700/50">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-800/80 text-slate-500 text-[10px] uppercase font-black tracking-widest">
+                            <tr>
+                                <th class="px-8 py-5">Property Address</th>
+                                <th class="px-8 py-5">Last Sold Price</th>
+                                <th class="px-8 py-5 text-right">Value/m²</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody" class="divide-y divide-slate-800/50 text-slate-300">
+                            </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        // 1. PASTE YOUR CLOUDFLARE WORKER LINK HERE
+        // YOUR CUSTOM CLOUDFLARE WORKER
         const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/"; 
         const EPC_AUTH = "sidehustlesallam@gmail.com:8e8bcb44ea70c2ca63b3116dd63a1a307ba3159d";
+        
+        let history = [];
+
+        function updateHistoryUI(pc, avg) {
+            if (!history.find(h => h.pc === pc)) {
+                history.unshift({ pc, avg });
+                if (history.length > 10) history.pop();
+            }
+            const list = document.getElementById('historyList');
+            list.innerHTML = history.map(h => `
+                <div class="glass border border-slate-800 p-4 rounded-2xl history-item transition-all cursor-pointer flex justify-between items-center group" 
+                     onclick="document.getElementById('postcode').value='${h.pc}'; runPoundsPer();">
+                    <span class="font-bold text-sm text-slate-300 group-hover:text-white">${h.pc}</span>
+                    <span class="text-blue-500 font-black text-xs">£${h.avg.toLocaleString()}</span>
+                </div>
+            `).join('');
+        }
 
         async function runPoundsPer() {
-            const pc = document.getElementById('postcode').value.toUpperCase().trim();
-            if (!pc || PROXY_URL.includes("PASTE_YOUR")) { alert("Please set up your Cloudflare Worker first!"); return; }
+            const input = document.getElementById('postcode').value.toUpperCase().trim();
+            if (!input) return;
 
-            document.getElementById('btn').disabled = true;
-            document.getElementById('status').innerText = "Routing through private bridge...";
+            const btn = document.getElementById('btn');
+            const status = document.getElementById('status');
+            const results = document.getElementById('results');
+            
+            btn.disabled = true;
+            status.innerHTML = `<span class="flex h-2 w-2 rounded-full bg-blue-500 animate-ping mr-2"></span> Analyzing through Cloudflare Bridge...`;
+            results.classList.add('hidden');
 
             try {
-                // Fetch LR via your private proxy
-                const lrTarget = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(pc)}&_limit=25`;
+                // 1. Fetch Land Registry Data via Worker
+                const lrTarget = `https://landregistry.data.gov.uk/data/ppi/transaction-record.json?propertyAddress.postcode=${encodeURIComponent(input)}&_limit=40`;
                 const lrRes = await fetch(`${PROXY_URL}?url=${encodeURIComponent(lrTarget)}`);
+                if (!lrRes.ok) throw new Error("Land Registry inaccessible.");
                 const lrData = await lrRes.json();
                 const sales = lrData.result.items;
 
-                // Fetch EPC via proxy
-                const epcTarget = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${pc.replace(/\s/g, '')}`;
+                // 2. Fetch EPC Data via Worker
+                const epcTarget = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${input.replace(/\s/g, '')}`;
                 const epcRes = await fetch(`${PROXY_URL}?url=${encodeURIComponent(epcTarget)}`, {
                     headers: { "Authorization": "Basic " + btoa(EPC_AUTH) }
                 });
+                if (!epcRes.ok) throw new Error("EPC Register inaccessible.");
                 const epcData = await epcRes.json();
                 const epcs = epcData.rows;
 
                 let totalSqmPrice = 0, matchCount = 0, tableHtml = "";
-                sales.forEach(p => {
-                    if (!p.latestTransaction) return;
-                    const price = p.latestTransaction.pricePaid;
-                    const houseNum = p.paon.toUpperCase();
-                    const epc = epcs.find(e => e.address.toUpperCase().includes(houseNum));
-                    if (epc && epc['total-floor-area'] > 0) {
-                        const sqmPrice = Math.round(price / epc['total-floor-area']);
-                        totalSqmPrice += sqmPrice; matchCount++;
-                        tableHtml += `<tr><td class="px-6 py-4">${p.paon} ${p.street}</td><td class="px-6 py-4">£${price.toLocaleString()}</td><td class="px-6 py-4 text-right font-bold text-blue-400">£${sqmPrice.toLocaleString()}</td></tr>`;
+
+                sales.forEach(sale => {
+                    const price = sale.pricePaid;
+                    const paon = sale.propertyAddress.paon || "";
+                    const street = sale.propertyAddress.street || "";
+                    const fullAddr = `${paon} ${street}`;
+                    
+                    // Fuzzy match house number with EPC address
+                    const epc = epcs.find(e => e.address.toUpperCase().startsWith(paon.toUpperCase()));
+
+                    if (epc && parseFloat(epc['total-floor-area']) > 0) {
+                        const area = parseFloat(epc['total-floor-area']);
+                        const sqmPrice = Math.round(price / area);
+                        totalSqmPrice += sqmPrice;
+                        matchCount++;
+
+                        tableHtml += `
+                            <tr class="hover:bg-blue-500/5 transition-colors border-b border-slate-800/50">
+                                <td class="px-8 py-5 font-semibold text-slate-100">${fullAddr}</td>
+                                <td class="px-8 py-5 text-slate-500 font-medium italic">£${price.toLocaleString()}</td>
+                                <td class="px-8 py-5 text-blue-500 font-black text-right text-base">£${sqmPrice.toLocaleString()}</td>
+                            </tr>`;
                     }
                 });
 
                 if (matchCount > 0) {
-                    document.getElementById('avgPrice').innerText = `£${Math.round(totalSqmPrice / matchCount).toLocaleString()}`;
+                    const avg = Math.round(totalSqmPrice / matchCount);
+                    document.getElementById('avgPrice').innerText = `£${avg.toLocaleString()}`;
                     document.getElementById('matchCount').innerText = matchCount;
+                    document.getElementById('matchBar').style.width = Math.min((matchCount / sales.length) * 100, 100) + "%";
                     document.getElementById('tableBody').innerHTML = tableHtml;
-                    document.getElementById('results').classList.remove('hidden');
-                    document.getElementById('status').innerText = "Live Data.";
+                    results.classList.remove('hidden');
+                    status.innerHTML = `<span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Success: ${matchCount} properties analyzed.`;
+                    updateHistoryUI(input, avg);
+                } else {
+                    status.innerHTML = `<span class="w-2 h-2 rounded-full bg-orange-500 mr-2"></span> Sales found, but no size data available for this street.`;
                 }
-            } catch (err) { document.getElementById('status').innerText = "Error: " + err.message; }
-            finally { document.getElementById('btn').disabled = false; }
+
+            } catch (err) {
+                console.error(err);
+                status.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500 mr-2"></span> Error: ${err.message}`;
+            } finally {
+                btn.disabled = false;
+            }
         }
     </script>
 </body>
