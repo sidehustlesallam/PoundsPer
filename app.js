@@ -1,124 +1,153 @@
 /**
- * £Per | Property Audit Engine - v10.6
- * Fixed: Address Resolution Visibility & UPRN Mapping
+ * £Per | Property Audit Engine - v10.7
+ * Features: Zoopla UPRN Scraping + Postcode Fallback
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/"; 
 
 let currentEpcRows = [];
 
-// --- 1. SEARCH ---
+// --- 1. ENTRY POINT ---
 async function handleDiscovery() {
     const input = document.getElementById('mainInput').value.trim();
-    const pcMatch = input.match(/([A-Z][A-HJ-Y]?[0-9][A-Z0-9]?\s?[0-9][A-Z]{2})/i);
     
-    // Reset UI
+    // Reset UI State
     document.getElementById('addressSelectorContainer').classList.add('hidden');
     document.getElementById('dashboard').classList.add('hidden');
 
-    if (!pcMatch) {
-        updateStatus("ERROR: ENTER VALID POSTCODE", "error");
+    // PATH A: ZOOPLA URL DETECTION
+    if (input.includes("zoopla.co.uk")) {
+        updateStatus("SCRAPING ZOOPLA SOURCE...", "loading");
+        try {
+            // Ask the worker to find the UPRN in the Zoopla HTML
+            const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(input)}`);
+            const data = await res.json();
+            
+            if (data.extractedUprn) {
+                updateStatus(`UPRN IDENTIFIED: ${data.extractedUprn}`, "success");
+                await fetchByUprn(data.extractedUprn);
+            } else {
+                throw new Error("UPRN_NOT_FOUND_IN_SOURCE");
+            }
+        } catch (e) {
+            updateStatus(`SCRAPE_FAIL: ${e.message}`, "error");
+            console.error(e);
+        }
         return;
     }
 
-    const pc = pcMatch[0].toUpperCase().replace(/\s/g, '');
-    updateStatus(`FETCHING RECORDS FOR ${pc}...`, "loading");
+    // PATH B: STANDARD POSTCODE DETECTION
+    const pcMatch = input.match(/([A-Z][A-HJ-Y]?[0-9][A-Z0-9]?\s?[0-9][A-Z]{2})/i);
+    if (pcMatch) {
+        const pc = pcMatch[0].toUpperCase().replace(/\s/g, '');
+        updateStatus(`SEARCHING POSTCODE: ${pc}...`, "loading");
+        try {
+            const target = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${pc}`;
+            const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(target)}`);
+            const data = await safeParse(res);
+            
+            if (!data || !data.rows || data.rows.length === 0) throw new Error("NO_RECORDS");
 
-    try {
-        const target = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${pc}`;
-        const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(target)}`);
-        
-        if (!res.ok) throw new Error(`HTTP_${res.status}`);
-        
-        const data = await safeParse(res);
-        
-        if (!data || !data.rows || data.rows.length === 0) {
-            throw new Error("NO_EPC_DATA_FOUND");
+            currentEpcRows = data.rows;
+            renderAddressList(currentEpcRows);
+            updateStatus(`${currentEpcRows.length} UNITS FOUND`, "success");
+        } catch (err) {
+            updateStatus(`FAIL: ${err.message}`, "error");
         }
-
-        currentEpcRows = data.rows;
-        
-        // --- THE FIX: FORCING VISIBILITY ---
-        renderAddressList(currentEpcRows);
-        updateStatus(`${currentEpcRows.length} ASSETS FOUND`, "success");
-        
-    } catch (err) {
-        updateStatus(`FAIL: ${err.message}`, "error");
-        console.error(err);
+    } else {
+        updateStatus("ERROR: PROVIDE POSTCODE OR ZOOPLA URL", "error");
     }
 }
 
-// --- 2. ADDRESS LIST RENDERER ---
+// --- 2. UPRN DIRECT QUERY ---
+async function fetchByUprn(uprn) {
+    updateStatus("QUERYING GOV DATABASE...", "loading");
+    try {
+        const target = `https://epc.opendatacommunities.org/api/v1/domestic/search?uprn=${uprn}`;
+        const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(target)}`);
+        const data = await safeParse(res);
+
+        if (data.rows && data.rows.length > 0) {
+            // Jump straight to dashboard for the unique UPRN record
+            await initiateFinalAudit(data.rows[0]);
+        } else {
+            throw new Error("UPRN_NOT_IN_REGISTRY");
+        }
+    } catch (e) {
+        updateStatus(`UPRN_ERROR: ${e.message}`, "error");
+    }
+}
+
+// --- 3. ADDRESS SELECTION (POSTCODE PATH) ---
 function renderAddressList(rows) {
     const container = document.getElementById('addressSelectorContainer');
     const dropdown = document.getElementById('addressDropdown');
-    
-    // Sort logically (House numbers)
     rows.sort((a, b) => a.address.localeCompare(b.address, undefined, {numeric: true}));
-
-    dropdown.innerHTML = '<option value="">-- CLICK TO SELECT ADDRESS --</option>';
-    
+    dropdown.innerHTML = '<option value="">-- CLICK TO SELECT UNIT --</option>';
     rows.forEach((row, i) => {
         const opt = document.createElement('option');
         opt.value = i;
         opt.textContent = row.address;
         dropdown.appendChild(opt);
     });
-
-    // CRITICAL: Un-hide the container
     container.classList.remove('hidden');
     container.scrollIntoView({ behavior: 'smooth' });
 }
 
-// --- 3. FINAL AUDIT ---
 async function selectAddress() {
     const idx = document.getElementById('addressDropdown').value;
     if (idx === "") return;
+    await initiateFinalAudit(currentEpcRows[idx]);
+}
 
-    const epc = currentEpcRows[idx];
-    updateStatus("GENERATING AUDIT...", "loading");
-
+// --- 4. DATA ORCHESTRATOR ---
+async function initiateFinalAudit(epcRecord) {
+    updateStatus("ORCHESTRATING FORENSIC DATA...", "loading");
     try {
-        const pc = epc.postcode;
-        // Parallel fetch for secondary data
+        const pc = epcRecord.postcode;
         const [lr, flood, radon] = await Promise.all([
             safeFetch(`https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(pc)}&_limit=20`),
             safeFetch(`https://environment.data.gov.uk/flood-monitoring/id/stations?postcode=${encodeURIComponent(pc)}`),
             safeFetch(`https://api.getthedata.com/radon/postcode/${pc.replace(/\s/g, '')}`)
         ]);
 
-        renderDashboard(epc, lr?.result?.items || [], flood?.items || [], radon?.data);
-        updateStatus("AUDIT COMPLETE", "success");
+        renderDashboard(epcRecord, lr?.result?.items || [], flood?.items || [], radon?.data);
+        updateStatus("AUDIT_COMPLETE", "success");
     } catch (e) {
-        updateStatus("PARTIAL AUDIT LOADED", "success");
-        renderDashboard(epc, [], [], null);
+        updateStatus("PARTIAL_DATA_LOADED", "success");
+        renderDashboard(epcRecord, [], [], null);
     }
 }
 
-// --- 4. DASHBOARD RENDERER ---
+// --- 5. UI RENDERER ---
 function renderDashboard(epc, sales, flood, radon) {
-    // Basic Details & UPRN
     document.getElementById('displayAddress').innerText = epc.address.toUpperCase();
     document.getElementById('displayUprn').innerText = epc.uprn || "N/A";
-    document.getElementById('mapLink').href = `https://www.google.com/maps/search/${encodeURIComponent(epc.address + ' ' + epc.postcode)}`;
-
-    // Energy Badge
-    const badge = document.getElementById('epcBadge');
-    badge.innerText = epc['current-energy-rating'];
     
-    // Size & Val
+    // Improved Map link
+    const mapQuery = encodeURIComponent(`${epc.address}, ${epc.postcode}`);
+    document.getElementById('mapLink').href = `https://www.google.com/maps/search/?api=1&query=${mapQuery}`;
+
+    document.getElementById('epcBadge').innerText = epc['current-energy-rating'];
+    
     const area = parseFloat(epc['total-floor-area']) || 0;
     document.getElementById('displaySize').innerText = Math.round(area);
 
+    // Dynamic Valuation logic
     let val = "N/A";
     if (sales.length > 0 && area > 0) {
-        let total = 0;
-        sales.forEach(s => { if (s.latestTransaction) total += (s.latestTransaction.pricePaid / area); });
-        val = `£${Math.round(total / sales.length).toLocaleString()}`;
+        let totalSqm = 0, count = 0;
+        sales.forEach(s => {
+            if (s.latestTransaction) {
+                totalSqm += (s.latestTransaction.pricePaid / area);
+                count++;
+            }
+        });
+        val = count > 0 ? `£${Math.round(totalSqm / count).toLocaleString()}` : "N/A";
     }
     document.getElementById('valMetric').innerText = val;
 
-    // Hazards
+    // Environmental Risk
     const floodEl = document.getElementById('floodStatus');
     floodEl.innerText = flood.length > 0 ? "STATION_NEARBY" : "NEGATIVE";
     floodEl.className = flood.length > 0 ? "indicator-red" : "indicator-green";
@@ -128,9 +157,8 @@ function renderDashboard(epc, sales, flood, radon) {
     radonEl.innerText = isRadonHigh ? "AFFECTED_AREA" : "NEGATIVE";
     radonEl.className = isRadonHigh ? "indicator-red" : "indicator-green";
 
-    document.getElementById('epcHeating').innerText = epc['mainheating-description'] || "SYSTEM DATA MISSING";
+    document.getElementById('epcHeating').innerText = epc['mainheating-description'] || "INFRASTRUCTURE_DATA_MISSING";
 
-    // Reveal Dashboard
     document.getElementById('dashboard').classList.remove('hidden');
     document.getElementById('dashboard').scrollIntoView({ behavior: 'smooth' });
 }
@@ -142,7 +170,7 @@ async function safeParse(response) {
         return JSON.parse(text);
     } catch (e) {
         if (text.includes("<html")) throw new Error("API_ACCESS_DENIED");
-        throw new Error("DATA_PARSE_ERROR");
+        throw new Error("PARSE_ERROR");
     }
 }
 
