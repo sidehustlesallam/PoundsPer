@@ -1,13 +1,41 @@
-/**
- * £Per | Hyper-Stealth Proxy v10.3
- * Purpose: Bypassing Advanced Bot-Detection & Rate Limits
- */
+// Configuration
+const RATE_LIMIT_COUNT = 10; // Max 10 searches...
+const RATE_LIMIT_PERIOD = 60; // ...per 60 seconds
+
+// Temporary in-memory cache (Reset when worker instance restarts)
+const ipCache = {};
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const targetUrl = url.searchParams.get("url");
+    const clientIP = request.headers.get("CF-Connecting-IP") || "anonymous";
 
+    // 1. RATE LIMIT CHECK
+    const now = Math.floor(Date.now() / 1000);
+    if (!ipCache[clientIP]) {
+      ipCache[clientIP] = { count: 1, reset: now + RATE_LIMIT_PERIOD };
+    } else {
+      if (now > ipCache[clientIP].reset) {
+        // Reset window passed
+        ipCache[clientIP] = { count: 1, reset: now + RATE_LIMIT_PERIOD };
+      } else {
+        // Still in window
+        ipCache[clientIP].count++;
+      }
+    }
+
+    if (ipCache[clientIP].count > RATE_LIMIT_COUNT) {
+      return new Response(JSON.stringify({ 
+        error: "RATE_LIMIT_EXCEEDED", 
+        message: "Slow down. High-frequency auditing detected." 
+      }), {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      });
+    }
+
+    // 2. CORS PREFLIGHT
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -20,45 +48,29 @@ export default {
 
     if (!targetUrl) return new Response("Missing URL", { status: 400 });
 
-    // Rotate common real-world browser headers
     const headers = new Headers({
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-      "Accept": "application/json, text/plain, */*",
-      "Accept-Language": "en-GB,en;q=0.9",
-      "Cache-Control": "no-cache",
-      "Pragma": "no-cache",
-      "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
-      "Sec-Ch-Ua-Mobile": "?0",
-      "Sec-Ch-Ua-Platform": '"macOS"',
-      "Sec-Fetch-Dest": "empty",
-      "Sec-Fetch-Mode": "cors",
-      "Sec-Fetch-Site": "cross-site",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json",
     });
 
-    const auth = request.headers.get("Authorization");
-    if (auth) headers.set("Authorization", auth);
+    // 3. VAULT INJECTION
+    if (targetUrl.includes("epc.opendatacommunities.org")) {
+      // Ensure you set EPC_TOKEN in Cloudflare Settings -> Variables
+      headers.set("Authorization", `Basic ${env.EPC_TOKEN}`);
+    }
 
     try {
       const response = await fetch(targetUrl, { headers });
-      
-      // If we get an error from the Gov API, let's catch it here 
-      // instead of letting the browser try to parse HTML as JSON.
-      if (!response.ok) {
-        return new Response(JSON.stringify({ 
-          error: "GOV_API_REJECTED_REQUEST", 
-          status: response.status 
-        }), {
-          status: 200, // Return 200 so the app doesn't crash, but sends the error as JSON
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-        });
-      }
-
       const newResponse = new Response(response.body, response);
       newResponse.headers.set("Access-Control-Allow-Origin", "*");
+      
+      // Add rate limit info to headers so the UI knows
+      newResponse.headers.set("X-RateLimit-Remaining", (RATE_LIMIT_COUNT - ipCache[clientIP].count).toString());
+      
       return newResponse;
     } catch (err) {
       return new Response(JSON.stringify({ error: err.message }), { 
-        status: 200, 
+        status: 500, 
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } 
       });
     }
