@@ -44,3 +44,5 @@
 ├── app.js          # Main Orchestrator (Scraping, APIs, UI Injection)
 ├── worker.js       # Cloudflare Stealth Proxy (Bypassing CORS/Bot detection)
 └── README.md       # Project Documentation
+
+This tool is for informational purposes only. Official property decisions should be supported by professional surveys and legal advice.
