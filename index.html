@@ -87,6 +87,23 @@
                 <div id="epcHeating" class="data-mono text-xs text-white uppercase font-bold">--</div>
             </div>
         </section>
+        <section id="historySection" class="hidden space-y-4">
+    <div class="audit-header">Asset Transaction Ledger (Land Registry)</div>
+    <div class="audit-panel overflow-hidden">
+        <table class="w-full text-left data-mono text-[11px]">
+            <thead>
+                <tr class="border-b border-gray-900 bg-black/40">
+                    <th class="p-4 text-gray-500 font-bold">DATE</th>
+                    <th class="p-4 text-gray-500 font-bold">PRICE_PAID</th>
+                    <th class="p-4 text-gray-500 font-bold">TYPE</th>
+                    <th class="p-4 text-gray-500 font-bold">RECORD_ID</th>
+                </tr>
+            </thead>
+            <tbody id="historyBody" class="divide-y divide-gray-900">
+                </tbody>
+        </table>
+    </div>
+</section>
     </main>
 
     <script src="app.js"></script>
