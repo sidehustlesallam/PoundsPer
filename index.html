@@ -16,62 +16,59 @@
     <div class="max-w-4xl mx-auto">
         <div class="flex items-center justify-between mb-8">
             <h1 class="text-3xl font-black tracking-tighter text-blue-500">Pounds<span class="text-white">Per</span></h1>
-            <div class="text-[10px] text-slate-500 uppercase tracking-widest border border-slate-700 px-2 py-1 rounded">Desktop Engine v1.2</div>
+            <div class="text-[10px] text-slate-500 uppercase tracking-widest border border-slate-700 px-2 py-1 rounded">V3 Direct-Link</div>
         </div>
 
-        <div class="glass rounded-2xl p-6 mb-8 shadow-2xl">
+        <div class="glass rounded-2xl p-6 mb-8 shadow-2xl text-center md:text-left">
             <div class="flex flex-col md:flex-row gap-4">
                 <input type="text" id="postcode" placeholder="Enter Postcode (e.g. SW1A 1AA)" 
-                    class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all text-white">
+                    class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all text-white placeholder-slate-600">
                 <button onclick="runPoundsPer()" id="btn"
-                    class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center disabled:opacity-50 shadow-lg shadow-blue-900/20">
+                    class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-10 py-3 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-blue-900/40">
                     Analyze Area
                 </button>
             </div>
-            <p class="text-[10px] text-slate-500 mt-4 text-center">
-                Requires Proxy. If data fails: <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" class="text-blue-400 underline font-bold">ACTIVATE PROXY HERE</a>
-            </p>
+            <p id="status" class="text-xs text-slate-500 mt-4 italic">Ready for analysis.</p>
         </div>
 
-        <div id="results" class="hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div class="glass p-6 rounded-2xl text-center">
-                    <span class="text-slate-400 text-xs uppercase font-bold tracking-tight">Avg £/m²</span>
-                    <div id="avgPrice" class="text-4xl font-black mt-2 text-blue-400">£0</div>
+        <div id="results" class="hidden space-y-6 animate-in fade-in duration-700">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="glass p-8 rounded-2xl text-center border-t-4 border-t-blue-500">
+                    <span class="text-slate-400 text-xs uppercase font-bold tracking-widest">Avg Value</span>
+                    <div id="avgPrice" class="text-5xl font-black mt-2 text-white">£0</div>
+                    <div class="text-blue-400 text-xs font-bold mt-1 uppercase tracking-tighter">Per Square Metre</div>
                 </div>
-                <div class="glass p-6 rounded-2xl text-center md:col-span-2 flex items-center justify-around">
-                    <div>
-                        <span class="text-slate-400 text-xs uppercase font-bold">Matched Sales</span>
-                        <div id="matchCount" class="text-2xl font-bold mt-1">0</div>
+                
+                <div class="glass p-8 rounded-2xl md:col-span-2 flex flex-col justify-center px-10">
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-400 text-sm font-medium">Successful Matches</span>
+                        <span id="matchCount" class="text-2xl font-black text-white">0</span>
                     </div>
-                    <div class="h-8 w-px bg-slate-700"></div>
-                    <div>
-                        <span class="text-slate-400 text-xs uppercase font-bold">Area Reliability</span>
-                        <div id="reliability" class="text-2xl font-bold mt-1 text-green-400">Stable</div>
+                    <div class="w-full bg-slate-800 h-2 rounded-full mt-3 overflow-hidden">
+                        <div id="matchBar" class="bg-blue-500 h-full transition-all duration-1000" style="width: 0%"></div>
                     </div>
+                    <p class="text-[10px] text-slate-500 mt-4 uppercase tracking-widest">Cross-referenced against EPC Register</p>
                 </div>
             </div>
 
             <div class="glass rounded-2xl overflow-hidden shadow-2xl border border-slate-700/50">
                 <table class="w-full text-left text-sm">
-                    <thead class="bg-slate-800/80 text-slate-400 text-xs uppercase font-black">
+                    <thead class="bg-slate-800/80 text-slate-500 text-[10px] uppercase font-black">
                         <tr>
-                            <th class="px-6 py-4 tracking-widest">Property Address</th>
-                            <th class="px-6 py-4 tracking-widest">Price Paid</th>
-                            <th class="px-6 py-4 tracking-widest text-right">Value/m²</th>
+                            <th class="px-6 py-4">Property Address</th>
+                            <th class="px-6 py-4">Sold Price</th>
+                            <th class="px-6 py-4 text-right">£/m²</th>
                         </tr>
                     </thead>
-                    <tbody id="tableBody" class="divide-y divide-slate-800"></tbody>
+                    <tbody id="tableBody" class="divide-y divide-slate-800/50 text-slate-300"></tbody>
                 </table>
             </div>
         </div>
-
-        <div id="status" class="mt-6 text-center text-slate-400 text-sm italic font-light"></div>
     </div>
 
     <script>
+        // Your hardcoded key
         const EPC_AUTH = "sidehustlesallam@gmail.com:8e8bcb44ea70c2ca63b3116dd63a1a307ba3159d";
-        const PROXY = "https://cors-anywhere.herokuapp.com/";
 
         async function runPoundsPer() {
             const input = document.getElementById('postcode').value.toUpperCase().trim();
@@ -82,15 +79,13 @@
             const results = document.getElementById('results');
             
             btn.disabled = true;
-            status.innerHTML = `<span class="animate-pulse">Connecting to Land Registry...</span>`;
+            status.innerHTML = `<span class="text-blue-400 animate-pulse font-bold">📡 CALLING LAND REGISTRY DIRECT...</span>`;
             results.classList.add('hidden');
 
             try {
-                // 1. Fetch Land Registry Data (Newer, cleaner API endpoint)
-                const lrUrl = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(input)}&_limit=25`;
-                const lrRes = await fetch(PROXY + lrUrl);
-                
-                if (lrRes.status === 403 || lrRes.status === 404) throw new Error("Proxy access needed. Click the blue link above.");
+                // 1. Fetch Land Registry Data (Direct JSON-LD link - No Proxy needed!)
+                const lrRes = await fetch(`https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(input)}&_limit=50`);
+                if (!lrRes.ok) throw new Error("Government server busy. Try again in 5s.");
                 
                 const lrData = await lrRes.json();
                 const sales = lrData.result.items;
@@ -105,15 +100,12 @@
                 let totalSqmPrice = 0, matchCount = 0, tableHtml = "";
 
                 sales.forEach(property => {
-                    // Check if property has a latest transaction
-                    const latestTx = property.latestTransaction;
-                    if (!latestTx) return;
+                    if (!property.latestTransaction) return;
 
-                    const price = latestTx.pricePaid;
+                    const price = property.latestTransaction.pricePaid;
                     const addrLine = (property.paon || "") + " " + (property.street || "");
                     const houseNum = (property.paon || "").toUpperCase();
                     
-                    // Match by House Number/Name
                     const epcMatch = epcs.find(e => e.address.toUpperCase().includes(houseNum));
 
                     if (epcMatch && parseFloat(epcMatch['total-floor-area']) > 0) {
@@ -123,29 +115,28 @@
                         matchCount++;
 
                         tableHtml += `
-                            <tr class="hover:bg-blue-900/10 transition-colors border-b border-slate-800/50">
-                                <td class="px-6 py-5 font-medium text-slate-100">${addrLine}</td>
-                                <td class="px-6 py-5 text-slate-400 italic">£${price.toLocaleString()}</td>
+                            <tr class="hover:bg-blue-500/5 transition-colors">
+                                <td class="px-6 py-5 font-semibold text-slate-100">${addrLine}</td>
+                                <td class="px-6 py-5 text-slate-500">£${price.toLocaleString()}</td>
                                 <td class="px-6 py-5 text-blue-400 font-black text-right">£${sqmPrice.toLocaleString()}</td>
                             </tr>`;
                     }
                 });
 
                 if (matchCount > 0) {
-                    document.getElementById('avgPrice').innerText = `£${Math.round(totalSqmPrice / matchCount).toLocaleString()}`;
+                    const avg = Math.round(totalSqmPrice / matchCount);
+                    document.getElementById('avgPrice').innerText = `£${avg.toLocaleString()}`;
                     document.getElementById('matchCount').innerText = matchCount;
+                    document.getElementById('matchBar').style.width = Math.min((matchCount / sales.length) * 100, 100) + "%";
                     document.getElementById('tableBody').innerHTML = tableHtml;
                     results.classList.remove('hidden');
-                    status.innerText = "";
+                    status.innerText = "Data updated successfully.";
                 } else {
-                    status.innerHTML = `<span class="text-orange-400 uppercase text-xs font-bold tracking-widest">Postcode Active but no Area matches found. Try an adjacent postcode.</span>`;
+                    status.innerHTML = `<span class="text-orange-400">Sold prices found, but square footage (EPC) missing for this postcode.</span>`;
                 }
 
             } catch (err) {
-                status.innerHTML = `<div class="bg-red-900/20 p-4 rounded-xl border border-red-900/50">
-                    <p class="text-red-400 font-bold mb-2">ERROR: ${err.message}</p>
-                    <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank" class="text-blue-400 underline font-bold">CLICK HERE TO FIX (ACTIVATE PROXY)</a>
-                </div>`;
+                status.innerHTML = `<span class="text-red-500 font-bold">ERROR: ${err.message}</span>`;
             } finally {
                 btn.disabled = false;
             }
