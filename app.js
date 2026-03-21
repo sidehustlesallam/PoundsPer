@@ -1,25 +1,27 @@
 /**
- * £Per | Property Audit Engine - v10.7
- * Features: Zoopla UPRN Scraping + Postcode Fallback
+ * £Per | Property Audit Engine - v10.8 (Master Build)
+ * Features: Zoopla UPRN Extraction, Land Registry Sold Prices, 
+ * EPC Discovery, and Environmental Risk Audit.
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/"; 
 
 let currentEpcRows = [];
 
-// --- 1. ENTRY POINT ---
+// --- 1. ENTRY POINT (POSTCODE OR URL) ---
 async function handleDiscovery() {
     const input = document.getElementById('mainInput').value.trim();
     
     // Reset UI State
     document.getElementById('addressSelectorContainer').classList.add('hidden');
     document.getElementById('dashboard').classList.add('hidden');
+    document.getElementById('historySection').classList.add('hidden');
 
     // PATH A: ZOOPLA URL DETECTION
     if (input.includes("zoopla.co.uk")) {
         updateStatus("SCRAPING ZOOPLA SOURCE...", "loading");
         try {
-            // Ask the worker to find the UPRN in the Zoopla HTML
+            // Worker fetches HTML and extracts UPRN via Regex
             const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(input)}`);
             const data = await res.json();
             
@@ -31,7 +33,6 @@ async function handleDiscovery() {
             }
         } catch (e) {
             updateStatus(`SCRAPE_FAIL: ${e.message}`, "error");
-            console.error(e);
         }
         return;
     }
@@ -68,7 +69,7 @@ async function fetchByUprn(uprn) {
         const data = await safeParse(res);
 
         if (data.rows && data.rows.length > 0) {
-            // Jump straight to dashboard for the unique UPRN record
+            // Unique UPRN found -> Run audit immediately
             await initiateFinalAudit(data.rows[0]);
         } else {
             throw new Error("UPRN_NOT_IN_REGISTRY");
@@ -78,11 +79,13 @@ async function fetchByUprn(uprn) {
     }
 }
 
-// --- 3. ADDRESS SELECTION (POSTCODE PATH) ---
+// --- 3. ADDRESS SELECTION (POSTCODE PATH ONLY) ---
 function renderAddressList(rows) {
     const container = document.getElementById('addressSelectorContainer');
     const dropdown = document.getElementById('addressDropdown');
+    
     rows.sort((a, b) => a.address.localeCompare(b.address, undefined, {numeric: true}));
+    
     dropdown.innerHTML = '<option value="">-- CLICK TO SELECT UNIT --</option>';
     rows.forEach((row, i) => {
         const opt = document.createElement('option');
@@ -90,6 +93,7 @@ function renderAddressList(rows) {
         opt.textContent = row.address;
         dropdown.appendChild(opt);
     });
+    
     container.classList.remove('hidden');
     container.scrollIntoView({ behavior: 'smooth' });
 }
@@ -105,8 +109,9 @@ async function initiateFinalAudit(epcRecord) {
     updateStatus("ORCHESTRATING FORENSIC DATA...", "loading");
     try {
         const pc = epcRecord.postcode;
+        // Parallel fetch for secondary data points
         const [lr, flood, radon] = await Promise.all([
-            safeFetch(`https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(pc)}&_limit=20`),
+            safeFetch(`https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(pc)}&_limit=50`),
             safeFetch(`https://environment.data.gov.uk/flood-monitoring/id/stations?postcode=${encodeURIComponent(pc)}`),
             safeFetch(`https://api.getthedata.com/radon/postcode/${pc.replace(/\s/g, '')}`)
         ]);
@@ -121,23 +126,28 @@ async function initiateFinalAudit(epcRecord) {
 
 // --- 5. UI RENDERER ---
 function renderDashboard(epc, sales, flood, radon) {
+    // Header Info
     document.getElementById('displayAddress').innerText = epc.address.toUpperCase();
     document.getElementById('displayUprn').innerText = epc.uprn || "N/A";
     
-    // Improved Map link
     const mapQuery = encodeURIComponent(`${epc.address}, ${epc.postcode}`);
     document.getElementById('mapLink').href = `https://www.google.com/maps/search/?api=1&query=${mapQuery}`;
 
+    // EPC Metrics
     document.getElementById('epcBadge').innerText = epc['current-energy-rating'];
-    
     const area = parseFloat(epc['total-floor-area']) || 0;
     document.getElementById('displaySize').innerText = Math.round(area);
+    document.getElementById('epcHeating').innerText = epc['mainheating-description'] || "DATA_NOT_PROVIDED";
 
-    // Dynamic Valuation logic
+    // Filter Sales History for specific house
+    const subjectHouse = epc.address.split(' ')[0].toUpperCase();
+    const houseSales = sales.filter(s => s.paon && s.paon.toUpperCase() === subjectHouse);
+
+    // Dynamic Valuation Calculation
     let val = "N/A";
-    if (sales.length > 0 && area > 0) {
+    if (houseSales.length > 0 && area > 0) {
         let totalSqm = 0, count = 0;
-        sales.forEach(s => {
+        houseSales.forEach(s => {
             if (s.latestTransaction) {
                 totalSqm += (s.latestTransaction.pricePaid / area);
                 count++;
@@ -147,9 +157,32 @@ function renderDashboard(epc, sales, flood, radon) {
     }
     document.getElementById('valMetric').innerText = val;
 
-    // Environmental Risk
+    // --- SOLD PRICE TABLE LOGIC ---
+    const historyBody = document.getElementById('historyBody');
+    const historySection = document.getElementById('historySection');
+    historyBody.innerHTML = ""; 
+
+    if (houseSales.length > 0) {
+        // Sort: Newest transactions at the top
+        houseSales.sort((a, b) => new Date(b.latestTransaction.date) - new Date(a.latestTransaction.date));
+        
+        houseSales.forEach(item => {
+            const row = document.createElement('tr');
+            row.className = "hover:bg-white/5 transition-colors";
+            row.innerHTML = `
+                <td class="p-4 text-white">${item.latestTransaction.date}</td>
+                <td class="p-4 font-bold text-green-400">£${item.latestTransaction.pricePaid.toLocaleString()}</td>
+                <td class="p-4 text-gray-500">${item.propertyType.label} / ${item.estateType.label}</td>
+                <td class="p-4 text-[9px] text-gray-700 uppercase font-mono">${item.latestTransaction.transactionId.split('-')[0]}...</td>
+            `;
+            historyBody.appendChild(row);
+        });
+        historySection.classList.remove('hidden');
+    }
+
+    // Environmental Risk UI
     const floodEl = document.getElementById('floodStatus');
-    floodEl.innerText = flood.length > 0 ? "STATION_NEARBY" : "NEGATIVE";
+    floodEl.innerText = flood.length > 0 ? "STATION_DETECTED" : "NEGATIVE";
     floodEl.className = flood.length > 0 ? "indicator-red" : "indicator-green";
 
     const radonEl = document.getElementById('radonStatus');
@@ -157,8 +190,7 @@ function renderDashboard(epc, sales, flood, radon) {
     radonEl.innerText = isRadonHigh ? "AFFECTED_AREA" : "NEGATIVE";
     radonEl.className = isRadonHigh ? "indicator-red" : "indicator-green";
 
-    document.getElementById('epcHeating').innerText = epc['mainheating-description'] || "INFRASTRUCTURE_DATA_MISSING";
-
+    // Final Reveal
     document.getElementById('dashboard').classList.remove('hidden');
     document.getElementById('dashboard').scrollIntoView({ behavior: 'smooth' });
 }
@@ -169,8 +201,8 @@ async function safeParse(response) {
     try {
         return JSON.parse(text);
     } catch (e) {
-        if (text.includes("<html")) throw new Error("API_ACCESS_DENIED");
-        throw new Error("PARSE_ERROR");
+        if (text.includes("<html")) throw new Error("API_ACCESS_DENIED_BY_GOV_FIREWALL");
+        throw new Error("JSON_PARSE_ERROR");
     }
 }
 
@@ -178,12 +210,19 @@ async function safeFetch(url) {
     try {
         const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(url)}`);
         return await safeParse(res);
-    } catch (e) { return null; }
+    } catch (e) { 
+        console.warn(`Fetch failed for: ${url}`);
+        return null; 
+    }
 }
 
 function updateStatus(msg, type) {
     const text = document.getElementById('statusText');
     const dot = document.getElementById('statusDot');
     text.innerText = msg.toUpperCase();
-    dot.className = `w-1.5 h-1.5 rounded-full ${type === 'loading' ? 'bg-blue-500 animate-pulse' : type === 'error' ? 'bg-red-600' : 'bg-green-500 shadow-[0_0_8px_green]'}`;
+    dot.className = `w-1.5 h-1.5 rounded-full ${
+        type === 'loading' ? 'bg-blue-500 animate-pulse' : 
+        type === 'error' ? 'bg-red-600' : 
+        'bg-green-500 shadow-[0_0_8px_green]'
+    }`;
 }
