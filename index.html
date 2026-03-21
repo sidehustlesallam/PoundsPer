@@ -3,185 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>£Per | Property Intelligence</title>
+    <title>£Per | Property Truth Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
-        .history-item:hover { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.5); }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
+        .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.05); }
+        .card-gradient { background: linear-gradient(135deg, rgba(30,41,59,0.5) 0%, rgba(15,23,42,0.8) 100%); }
+        .epc-a { color: #22c55e; } .epc-g { color: #ef4444; }
     </style>
 </head>
-<body class="min-h-screen p-4 md:p-8">
+<body class="min-h-screen">
 
-    <div class="max-w-6xl mx-auto flex flex-col md:flex-row gap-8">
+    <nav class="border-b border-slate-800 p-4 flex justify-between items-center glass sticky top-0 z-50">
+        <div class="flex items-center gap-2">
+            <span class="text-2xl font-black italic text-blue-500 tracking-tighter">£PER</span>
+            <span class="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 font-bold uppercase">Truth Engine v9</span>
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+            <div id="statusDot" class="w-2 h-2 rounded-full bg-slate-600"></div>
+            <span id="statusText" class="text-slate-400 font-medium">System Standby</span>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto p-6 space-y-8">
         
-        <div class="w-full md:w-64 space-y-4">
-            <h2 class="text-xs font-black uppercase tracking-widest text-slate-500 px-2">History</h2>
-            <div id="historyList" class="space-y-2">
-                <p class="text-xs text-slate-600 px-2 italic text-center py-4 border border-dashed border-slate-800 rounded-xl">Empty</p>
-            </div>
-        </div>
-
-        <div class="flex-1">
-            <div class="flex items-center justify-between mb-8">
-                <h1 class="text-5xl font-black tracking-tighter text-blue-500 italic">£Per</h1>
-                <div class="text-[10px] text-slate-500 uppercase tracking-widest border border-slate-700 px-2 py-1 rounded font-bold">V8.1 Direct-Access</div>
-            </div>
-
-            <div class="glass rounded-3xl p-6 mb-8 shadow-2xl">
-                <div class="flex flex-col md:flex-row gap-4">
-                    <input type="text" id="postcode" placeholder="ENTER POSTCODE" 
-                        onkeydown="if(event.key === 'Enter') runPoundsPer()"
-                        class="flex-1 bg-slate-900 border border-slate-700 rounded-2xl px-6 py-4 text-xl outline-none text-white placeholder-slate-600 uppercase font-bold">
-                    <button onclick="runPoundsPer()" id="btn"
-                        class="bg-blue-600 hover:bg-blue-500 text-white font-black px-12 py-4 rounded-2xl transition-all disabled:opacity-50">
-                        ANALYZE
-                    </button>
-                </div>
-                <div id="status" class="text-xs text-slate-500 mt-4 font-medium flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-slate-700" id="statusDot"></span>
-                    <span id="statusText">System Ready</span>
-                </div>
-            </div>
-
-            <div id="results" class="hidden space-y-6 animate-in fade-in duration-700">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="glass p-8 rounded-3xl text-center border-b-4 border-b-blue-600">
-                        <span class="text-slate-400 text-[10px] uppercase font-black tracking-widest">Avg Value</span>
-                        <div id="avgPrice" class="text-5xl font-black mt-2 text-white">£0</div>
-                        <div class="text-blue-500 text-[10px] font-bold mt-1 uppercase">Per Sq Metre</div>
-                    </div>
-                    
-                    <div class="glass p-8 rounded-3xl md:col-span-2 flex flex-col justify-center px-10">
-                        <div class="flex justify-between items-end mb-4">
-                            <span class="text-slate-400 text-[10px] uppercase font-black">Matched Records</span>
-                            <span id="matchCount" class="text-2xl font-black text-white">0</span>
-                        </div>
-                        <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                            <div id="matchBar" class="bg-blue-500 h-full transition-all duration-1000" style="width: 0%"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="glass rounded-3xl overflow-hidden shadow-2xl border border-slate-700/50">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-slate-800/80 text-slate-500 text-[10px] uppercase font-black">
-                            <tr>
-                                <th class="px-8 py-5">Property Address</th>
-                                <th class="px-8 py-5">Sold Price</th>
-                                <th class="px-8 py-5 text-right text-blue-400">Value/m²</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tableBody" class="divide-y divide-slate-800/50 text-slate-300"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // 1. UPDATE THIS LINK
-        const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/"; 
-        const EPC_AUTH = "sidehustlesallam@gmail.com:8e8bcb44ea70c2ca63b3116dd63a1a307ba3159d";
-        let history = [];
-
-        function updateHistoryUI(pc, avg) {
-            if (!history.find(h => h.pc === pc)) {
-                history.unshift({ pc, avg });
-                if (history.length > 8) history.pop();
-            }
-            document.getElementById('historyList').innerHTML = history.map(h => `
-                <div class="glass border border-slate-800 p-3 rounded-xl history-item transition-all cursor-pointer flex justify-between items-center" onclick="document.getElementById('postcode').value='${h.pc}'; runPoundsPer();">
-                    <span class="font-bold text-sm text-slate-300">${h.pc}</span>
-                    <span class="text-blue-500 font-black text-xs">£${h.avg.toLocaleString()}</span>
-                </div>
-            `).join('');
-        }
-
-        async function runPoundsPer() {
-            const input = document.getElementById('postcode').value.toUpperCase().trim();
-            if (!input) return;
-
-            const btn = document.getElementById('btn');
-            const statusText = document.getElementById('statusText');
-            const statusDot = document.getElementById('statusDot');
-            const results = document.getElementById('results');
+        <section class="max-w-3xl mx-auto text-center space-y-6 py-12">
+            <h2 class="text-4xl font-black tracking-tight">Bridge the <span class="text-blue-500">Information Asymmetry.</span></h2>
+            <p class="text-slate-400 text-sm">Paste a Zoopla/Rightmove link or enter a Postcode to reveal the data they hide.</p>
             
-            btn.disabled = true;
-            statusText.innerText = "Routing request through Cloudflare...";
-            statusDot.className = "w-2 h-2 rounded-full bg-blue-500 animate-ping";
-            results.classList.add('hidden');
+            <div class="relative group">
+                <input type="text" id="mainInput" 
+                    placeholder="URL or Postcode (e.g., SW1A 1AA)"
+                    class="w-full bg-slate-900/50 border-2 border-slate-800 rounded-2xl px-6 py-5 text-lg outline-none focus:border-blue-500 transition-all font-medium">
+                <button onclick="handleDiscovery()" id="searchBtn" 
+                    class="absolute right-3 top-3 bottom-3 bg-blue-600 hover:bg-blue-500 text-white px-8 rounded-xl font-bold transition-all">
+                    ANALYZE
+                </button>
+            </div>
 
-            try {
-                // Fetch Land Registry
-                const lrTarget = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(input)}&_limit=25`;
-                const lrRes = await fetch(`${PROXY_URL}?url=${encodeURIComponent(lrTarget)}`);
-                const lrText = await lrRes.text();
+            <div id="addressSelectorContainer" class="hidden animate-in fade-in slide-in-from-top-2">
+                <select id="addressDropdown" onchange="selectAddress()"
+                    class="w-full bg-slate-800 border border-blue-500/50 rounded-xl px-4 py-3 text-sm outline-none">
+                    <option value="">Select the specific address...</option>
+                </select>
+            </div>
+        </section>
 
-                if (lrText.trim().startsWith('<')) {
-                    throw new Error("Security challenge detected. Please try again in 15 seconds.");
-                }
+        <section id="dashboard" class="hidden grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <div class="md:col-span-1 space-y-6">
+                <div class="glass p-6 rounded-3xl card-gradient border-t-4 border-blue-500">
+                    <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Target Address</span>
+                    <h3 id="displayAddress" class="text-xl font-bold mt-1 leading-tight">--</h3>
+                    <div class="mt-4 flex gap-2">
+                        <a id="mapLink" target="_blank" class="text-[10px] bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg font-bold border border-slate-700 block text-center flex-1">VIEW ON MAP</a>
+                        <button class="text-[10px] bg-blue-600/10 text-blue-400 px-3 py-2 rounded-lg font-bold border border-blue-500/20 block text-center flex-1">SAVE ASSET</button>
+                    </div>
+                </div>
 
-                const lrData = JSON.parse(lrText);
-                const sales = lrData.result.items;
+                <div class="glass p-6 rounded-3xl card-gradient">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Efficiency & Size</span>
+                            <div class="text-3xl font-black mt-1"><span id="displaySize">0</span><span class="text-sm font-normal text-slate-500 ml-1">m²</span></div>
+                        </div>
+                        <div id="epcBadge" class="text-4xl font-black">--</div>
+                    </div>
+                </div>
+            </div>
 
-                // Fetch EPC
-                const epcTarget = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${input.replace(/\s/g, '')}`;
-                const epcRes = await fetch(`${PROXY_URL}?url=${encodeURIComponent(epcTarget)}`, {
-                    headers: { "Authorization": "Basic " + btoa(EPC_AUTH) }
-                });
-                const epcData = await epcRes.json();
-                const epcs = epcData.rows;
+            <div class="md:col-span-2 space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="glass p-6 rounded-3xl card-gradient">
+                        <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Market Value (£/m²)</span>
+                        <div id="valMetric" class="text-4xl font-black mt-2">£0</div>
+                        <p class="text-[10px] text-slate-500 mt-2">Based on last 25 local transactions</p>
+                    </div>
+                    <div class="glass p-6 rounded-3xl card-gradient">
+                        <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Environmental Risk</span>
+                        <div id="floodRisk" class="text-xl font-bold mt-2 text-green-400 italic">Calculating...</div>
+                        <p class="text-[10px] text-slate-500 mt-2">Environment Agency Flood Data</p>
+                    </div>
+                </div>
 
-                let totalSqmPrice = 0, matchCount = 0, tableHtml = "";
+                <div class="glass rounded-3xl overflow-hidden border border-slate-800">
+                    <div class="p-4 bg-slate-800/50 border-b border-slate-800">
+                        <h4 class="text-xs font-black uppercase tracking-widest">Connectivity & Amenities</h4>
+                    </div>
+                    <div class="p-6 grid grid-cols-2 gap-8">
+                        <div>
+                            <span class="text-[10px] font-bold text-slate-500 uppercase">Broadband</span>
+                            <div id="broadbandSpeed" class="text-lg font-bold">Ultrafast (1Gbps)</div>
+                        </div>
+                        <div>
+                            <span class="text-[10px] font-bold text-slate-500 uppercase">Primary School</span>
+                            <div id="schoolRating" class="text-lg font-bold text-green-400">Outstanding</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-                sales.forEach(property => {
-                    const lastTx = property.latestTransaction;
-                    if (!lastTx) return;
+    </main>
 
-                    const price = lastTx.pricePaid;
-                    const paon = property.paon || "";
-                    const street = property.street || "";
-                    
-                    const epc = epcs.find(e => e.address.toUpperCase().includes(paon.toUpperCase()));
-
-                    if (epc && parseFloat(epc['total-floor-area']) > 0) {
-                        const area = parseFloat(epc['total-floor-area']);
-                        const sqmPrice = Math.round(price / area);
-                        totalSqmPrice += sqmPrice;
-                        matchCount++;
-                        tableHtml += `
-                            <tr class="hover:bg-blue-500/5 transition-colors border-b border-slate-800/50">
-                                <td class="px-8 py-5 font-semibold text-slate-100">${paon} ${street}</td>
-                                <td class="px-8 py-5 text-slate-500 italic">£${price.toLocaleString()}</td>
-                                <td class="px-8 py-5 text-blue-500 font-black text-right">£${sqmPrice.toLocaleString()}</td>
-                            </tr>`;
-                    }
-                });
-
-                if (matchCount > 0) {
-                    const avg = Math.round(totalSqmPrice / matchCount);
-                    document.getElementById('avgPrice').innerText = `£${avg.toLocaleString()}`;
-                    document.getElementById('matchCount').innerText = matchCount;
-                    document.getElementById('matchBar').style.width = "100%";
-                    document.getElementById('tableBody').innerHTML = tableHtml;
-                    results.classList.remove('hidden');
-                    statusText.innerText = "Sync Complete.";
-                    statusDot.className = "w-2 h-2 rounded-full bg-green-500";
-                    updateHistoryUI(input, avg);
-                } else {
-                    statusText.innerText = "No matching size data found for this street.";
-                    statusDot.className = "w-2 h-2 rounded-full bg-orange-500";
-                }
-
-            } catch (err) {
-                statusText.innerText = err.message;
-                statusDot.className = "w-2 h-2 rounded-full bg-red-500";
-            } finally {
-                btn.disabled = false;
-            }
-        }
-    </script>
+    <script src="app.js"></script>
 </body>
 </html>
