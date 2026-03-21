@@ -5,49 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>£Per | Property Truth Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="style.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #020617; color: #f8fafc; }
         .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.05); }
         .card-gradient { background: linear-gradient(135deg, rgba(30,41,59,0.5) 0%, rgba(15,23,42,0.8) 100%); }
-        .epc-a { color: #22c55e; } .epc-g { color: #ef4444; }
     </style>
-    <link rel="stylesheet" href="style.css">
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen pb-12">
 
     <nav class="border-b border-slate-800 p-4 flex justify-between items-center glass sticky top-0 z-50">
         <div class="flex items-center gap-2">
             <span class="text-2xl font-black italic text-blue-500 tracking-tighter">£PER</span>
-            <span class="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 font-bold uppercase tracking-widest">Truth Engine v9.4</span>
+            <span class="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded border border-blue-500/20 font-bold uppercase tracking-widest">v9.5 Truth Engine</span>
         </div>
         <div class="flex items-center gap-3 text-xs">
             <div id="statusDot" class="w-2 h-2 rounded-full bg-slate-600 transition-all duration-500"></div>
-            <span id="statusText" class="text-slate-400 font-medium">System Standby</span>
+            <span id="statusText" class="text-slate-400 font-medium">System Ready</span>
         </div>
     </nav>
 
     <main class="max-w-6xl mx-auto p-6 space-y-8">
         
         <section class="max-w-3xl mx-auto text-center space-y-6 py-12">
-            <h2 class="text-4xl font-black tracking-tight leading-tight">Bridge the <span class="text-blue-500 italic">Information Asymmetry.</span></h2>
-            <p class="text-slate-400 text-sm max-w-md mx-auto leading-relaxed">Paste a Zoopla/Rightmove link or enter a Postcode to reveal the data they omit from the listing.</p>
-            
+            <h2 class="text-4xl font-black tracking-tight leading-tight italic">Kill Information <span class="text-blue-500">Asymmetry.</span></h2>
             <div class="relative group">
                 <input type="text" id="mainInput" 
-                    placeholder="URL or Postcode (e.g., SW1A 1AA)"
+                    placeholder="Paste Rightmove/Zoopla URL or Postcode..."
                     onkeydown="if(event.key === 'Enter') handleDiscovery()"
-                    class="w-full bg-slate-900/50 border-2 border-slate-800 rounded-2xl px-6 py-5 text-lg outline-none focus:border-blue-500 transition-all font-medium">
-                <button onclick="handleDiscovery()" id="searchBtn" 
-                    class="absolute right-3 top-3 bottom-3 bg-blue-600 hover:bg-blue-500 text-white px-8 rounded-xl font-bold transition-all shadow-lg shadow-blue-900/20">
-                    ANALYZE
-                </button>
+                    class="w-full bg-slate-900/50 border-2 border-slate-800 rounded-2xl px-6 py-5 text-lg outline-none focus:border-blue-500 transition-all font-medium shadow-2xl">
+                <button onclick="handleDiscovery()" class="absolute right-3 top-3 bottom-3 bg-blue-600 hover:bg-blue-500 text-white px-8 rounded-xl font-bold transition-all shadow-lg">ANALYZE</button>
             </div>
 
             <div id="addressSelectorContainer" class="hidden animate-in">
                 <select id="addressDropdown" onchange="selectAddress()"
-                    class="w-full bg-slate-800 border border-blue-500/50 rounded-xl px-4 py-3 text-sm outline-none text-white appearance-none cursor-pointer hover:bg-slate-700 transition-colors">
-                    <option value="">-- Select the exact property address --</option>
+                    class="w-full bg-slate-800 border border-blue-500/50 rounded-xl px-4 py-3 text-sm outline-none text-white cursor-pointer hover:bg-slate-700 transition-colors shadow-xl">
+                    <option value="">-- Choose specific property address --</option>
                 </select>
             </div>
         </section>
@@ -57,20 +51,20 @@
             <div class="md:col-span-1 space-y-6">
                 <div class="glass p-6 rounded-3xl card-gradient border-t-4 border-blue-500">
                     <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Identified Asset</span>
-                    <h3 id="displayAddress" class="text-xl font-bold mt-1 leading-tight text-white">--</h3>
+                    <h3 id="displayAddress" class="text-xl font-bold mt-1 leading-tight text-white italic">--</h3>
                     <div class="mt-4 flex gap-2">
-                        <a id="mapLink" target="_blank" class="text-[10px] bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg font-bold border border-slate-700 block text-center flex-1 transition-colors">GOOGLE MAPS</a>
-                        <button class="text-[10px] bg-blue-600/10 text-blue-400 px-3 py-2 rounded-lg font-bold border border-blue-500/20 block text-center flex-1">SAVE REPORT</button>
+                        <a id="mapLink" target="_blank" class="text-[10px] bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg font-bold border border-slate-700 block text-center flex-1 transition-colors">LIVE MAP</a>
+                        <button class="text-[10px] bg-blue-600/10 text-blue-400 px-3 py-2 rounded-lg font-bold border border-blue-500/20 block text-center flex-1">EXPORT DATA</button>
                     </div>
                 </div>
 
                 <div class="glass p-6 rounded-3xl card-gradient">
                     <div class="flex justify-between items-start">
                         <div>
-                            <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest leading-none">Efficiency & Scale</span>
+                            <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Scale & Energy</span>
                             <div class="text-3xl font-black mt-2 text-white"><span id="displaySize">0</span><span class="text-sm font-normal text-slate-500 ml-1">m²</span></div>
                         </div>
-                        <div id="epcBadge" class="text-4xl font-black">--</div>
+                        <div id="epcBadge" class="text-4xl font-black drop-shadow-lg">--</div>
                     </div>
                 </div>
             </div>
@@ -78,40 +72,47 @@
             <div class="md:col-span-2 space-y-6">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="glass p-6 rounded-3xl card-gradient">
-                        <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Market Value (£/m²)</span>
+                        <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Street Value (£/m²)</span>
                         <div id="valMetric" class="text-4xl font-black mt-2 text-white">£0</div>
-                        <p class="text-[10px] text-slate-500 mt-2 font-medium">Street average based on recent HMLR sales</p>
+                        <p class="text-[10px] text-slate-500 mt-2 font-medium">Derived from recent Land Registry transactions</p>
                     </div>
+
                     <div class="glass p-6 rounded-3xl card-gradient">
-                        <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Environmental Risk</span>
-                        <div id="floodRisk" class="text-xl font-bold mt-2 italic text-slate-400">Analyzing...</div>
-                        <p class="text-[10px] text-slate-500 mt-2 font-medium">Environment Agency Monitoring Stations</p>
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] uppercase font-black text-slate-500 tracking-widest">Environmental Risk</span>
+                            <div id="riskLevel" class="text-[9px] px-2 py-0.5 rounded border font-bold">--</div>
+                        </div>
+                        <div class="mt-4 space-y-3">
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="text-slate-400">Flood Sensors</span>
+                                <span id="floodStatus" class="font-bold">--</span>
+                            </div>
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="text-slate-400">Radon Potential</span>
+                                <span id="radonStatus" class="font-bold">--</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="glass rounded-3xl overflow-hidden border border-slate-800">
                     <div class="p-4 bg-slate-800/50 border-b border-slate-800">
-                        <h4 class="text-xs font-black uppercase tracking-widest text-slate-400">Amenities & Infrastructure</h4>
+                        <h4 class="text-xs font-black uppercase tracking-widest text-slate-400">Infrastructure & Amenities</h4>
                     </div>
                     <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div>
-                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none">Broadband Connectivity</span>
-                            <div id="broadbandSpeed" class="mt-2">
-                                <div class="animate-pulse h-6 w-32 bg-slate-800 rounded"></div>
-                            </div>
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Connectivity</span>
+                            <div id="broadbandSpeed" class="mt-2">--</div>
                         </div>
                         <div>
-                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none">Nearest Schools (Ofsted)</span>
-                            <div id="schoolList" class="mt-3 space-y-3">
-                                </div>
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Nearest Education</span>
+                            <div id="schoolList" class="mt-3 space-y-3">--</div>
                         </div>
                     </div>
                 </div>
             </div>
         </section>
-
     </main>
-
     <script src="app.js"></script>
 </body>
 </html>
