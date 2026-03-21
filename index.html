@@ -10,7 +10,6 @@
         body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
         .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
         .history-item:hover { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.5); }
-        input:upper { text-transform: uppercase; }
     </style>
 </head>
 <body class="min-h-screen p-4 md:p-8">
@@ -18,16 +17,16 @@
     <div class="max-w-6xl mx-auto flex flex-col md:flex-row gap-8">
         
         <div class="w-full md:w-64 space-y-4">
-            <h2 class="text-xs font-black uppercase tracking-widest text-slate-500 px-2">Recent Searches</h2>
+            <h2 class="text-xs font-black uppercase tracking-widest text-slate-500 px-2">History</h2>
             <div id="historyList" class="space-y-2">
-                <p class="text-xs text-slate-600 px-2 italic">Search a postcode to begin...</p>
+                <p class="text-xs text-slate-600 px-2 italic text-center py-4 border border-dashed border-slate-800 rounded-xl">Empty</p>
             </div>
         </div>
 
         <div class="flex-1">
             <div class="flex items-center justify-between mb-8">
                 <h1 class="text-5xl font-black tracking-tighter text-blue-500 italic">£Per</h1>
-                <div class="text-[10px] text-slate-500 uppercase tracking-widest border border-slate-700 px-2 py-1 rounded font-bold">V7 Stable Bridge</div>
+                <div class="text-[10px] text-slate-500 uppercase tracking-widest border border-slate-700 px-2 py-1 rounded font-bold">V8.1 Direct-Access</div>
             </div>
 
             <div class="glass rounded-3xl p-6 mb-8 shadow-2xl">
@@ -36,11 +35,14 @@
                         onkeydown="if(event.key === 'Enter') runPoundsPer()"
                         class="flex-1 bg-slate-900 border border-slate-700 rounded-2xl px-6 py-4 text-xl outline-none text-white placeholder-slate-600 uppercase font-bold">
                     <button onclick="runPoundsPer()" id="btn"
-                        class="bg-blue-600 hover:bg-blue-500 text-white font-black px-12 py-4 rounded-2xl transition-all disabled:opacity-50 shadow-lg shadow-blue-900/40">
+                        class="bg-blue-600 hover:bg-blue-500 text-white font-black px-12 py-4 rounded-2xl transition-all disabled:opacity-50">
                         ANALYZE
                     </button>
                 </div>
-                <div id="status" class="text-xs text-slate-500 mt-4 font-medium italic">Ready. Use Enter to search.</div>
+                <div id="status" class="text-xs text-slate-500 mt-4 font-medium flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-slate-700" id="statusDot"></span>
+                    <span id="statusText">System Ready</span>
+                </div>
             </div>
 
             <div id="results" class="hidden space-y-6 animate-in fade-in duration-700">
@@ -66,8 +68,8 @@
                     <table class="w-full text-left text-sm">
                         <thead class="bg-slate-800/80 text-slate-500 text-[10px] uppercase font-black">
                             <tr>
-                                <th class="px-8 py-5">Address</th>
-                                <th class="px-8 py-5">Price Paid</th>
+                                <th class="px-8 py-5">Property Address</th>
+                                <th class="px-8 py-5">Sold Price</th>
                                 <th class="px-8 py-5 text-right text-blue-400">Value/m²</th>
                             </tr>
                         </thead>
@@ -79,6 +81,7 @@
     </div>
 
     <script>
+        // 1. UPDATE THIS LINK
         const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/"; 
         const EPC_AUTH = "sidehustlesallam@gmail.com:8e8bcb44ea70c2ca63b3116dd63a1a307ba3159d";
         let history = [];
@@ -101,27 +104,29 @@
             if (!input) return;
 
             const btn = document.getElementById('btn');
-            const status = document.getElementById('status');
+            const statusText = document.getElementById('statusText');
+            const statusDot = document.getElementById('statusDot');
             const results = document.getElementById('results');
             
             btn.disabled = true;
-            status.innerHTML = `<span class="text-blue-400 animate-pulse font-bold">BYPASSING GATEWAY...</span>`;
+            statusText.innerText = "Routing request through Cloudflare...";
+            statusDot.className = "w-2 h-2 rounded-full bg-blue-500 animate-ping";
             results.classList.add('hidden');
 
             try {
-                // 1. Fetch Land Registry
-                const lrTarget = `https://landregistry.data.gov.uk/data/ppi/transaction-record.json?propertyAddress.postcode=${encodeURIComponent(input)}&_limit=25`;
+                // Fetch Land Registry
+                const lrTarget = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(input)}&_limit=25`;
                 const lrRes = await fetch(`${PROXY_URL}?url=${encodeURIComponent(lrTarget)}`);
-                
-                // Check if we got HTML instead of JSON
                 const lrText = await lrRes.text();
+
                 if (lrText.trim().startsWith('<')) {
-                    throw new Error("Government server returned a security challenge. Try again in 10 seconds.");
+                    throw new Error("Security challenge detected. Please try again in 15 seconds.");
                 }
+
                 const lrData = JSON.parse(lrText);
                 const sales = lrData.result.items;
 
-                // 2. Fetch EPC
+                // Fetch EPC
                 const epcTarget = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${input.replace(/\s/g, '')}`;
                 const epcRes = await fetch(`${PROXY_URL}?url=${encodeURIComponent(epcTarget)}`, {
                     headers: { "Authorization": "Basic " + btoa(EPC_AUTH) }
@@ -131,11 +136,15 @@
 
                 let totalSqmPrice = 0, matchCount = 0, tableHtml = "";
 
-                sales.forEach(sale => {
-                    const price = sale.pricePaid;
-                    const paon = sale.propertyAddress.paon || "";
-                    const street = sale.propertyAddress.street || "";
-                    const epc = epcs.find(e => e.address.toUpperCase().startsWith(paon.toUpperCase()));
+                sales.forEach(property => {
+                    const lastTx = property.latestTransaction;
+                    if (!lastTx) return;
+
+                    const price = lastTx.pricePaid;
+                    const paon = property.paon || "";
+                    const street = property.street || "";
+                    
+                    const epc = epcs.find(e => e.address.toUpperCase().includes(paon.toUpperCase()));
 
                     if (epc && parseFloat(epc['total-floor-area']) > 0) {
                         const area = parseFloat(epc['total-floor-area']);
@@ -158,14 +167,17 @@
                     document.getElementById('matchBar').style.width = "100%";
                     document.getElementById('tableBody').innerHTML = tableHtml;
                     results.classList.remove('hidden');
-                    status.innerText = "Success.";
+                    statusText.innerText = "Sync Complete.";
+                    statusDot.className = "w-2 h-2 rounded-full bg-green-500";
                     updateHistoryUI(input, avg);
                 } else {
-                    status.innerHTML = `<span class="text-orange-400">Sold prices found, but no size data matched.</span>`;
+                    statusText.innerText = "No matching size data found for this street.";
+                    statusDot.className = "w-2 h-2 rounded-full bg-orange-500";
                 }
 
             } catch (err) {
-                status.innerHTML = `<span class="text-red-500 font-bold">ERROR: ${err.message}</span>`;
+                statusText.innerText = err.message;
+                statusDot.className = "w-2 h-2 rounded-full bg-red-500";
             } finally {
                 btn.disabled = false;
             }
