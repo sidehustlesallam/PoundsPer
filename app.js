@@ -1,130 +1,151 @@
 /**
- * £Per | Property Audit Engine - v11.4
- * Logic: Independent Module Loading (Anti-Crash)
+ * £Per | Property Audit Engine - v11.5
+ * Fix: Restored updateStatus, added safe JSON handling
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/"; 
+let currentEpcRows = [];
 
-async function initiateFinalAudit(epcRecord) {
-    updateStatus("STARTING MULTI-POINT AUDIT...", "loading");
-    
-    // 1. Reveal Dashboard Immediately (even if empty)
-    document.getElementById('dashboard').classList.remove('hidden');
-    document.getElementById('displayAddress').innerText = epcRecord?.address?.toUpperCase() || "MANUAL SEARCH";
-    document.getElementById('displayUprn').innerText = epcRecord?.uprn || "N/A";
-    document.getElementById('epcBadge').innerText = epcRecord?.['current-energy-rating'] || "?";
-
-    const pc = epcRecord?.postcode || document.getElementById('mainInput').value.trim();
-    const cleanPc = pc.replace(/\s/g, '');
-    const formattedPc = pc.includes(' ') ? pc : pc.slice(0, -3) + ' ' + pc.slice(-3);
-
-    // 2. Load Market Data (Independent)
-    loadMarketData(formattedPc);
-
-    // 3. Load Environmental Data (Independent)
-    loadEnvData(cleanPc);
-
-    // 4. Load Geo/School Context (Independent)
-    loadGeoData(cleanPc);
-
-    updateStatus("AUDIT STREAMING...", "success");
+// --- 1. UI HELPERS (Critical Fix) ---
+function updateStatus(msg, type) {
+    const text = document.getElementById('statusText');
+    const dot = document.getElementById('statusDot');
+    if (!text || !dot) return;
+    text.innerText = msg.toUpperCase();
+    dot.className = `w-1.5 h-1.5 rounded-full ${
+        type === 'loading' ? 'bg-blue-500 animate-pulse' : 
+        type === 'error' ? 'bg-red-600' : 'bg-green-500 shadow-[0_0_8px_green]'
+    }`;
 }
 
-async function loadMarketData(pc) {
-    const marketBody = document.getElementById('marketBody');
+async function safeParse(res) {
     try {
-        const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(`https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(pc)}&_limit=25`)}`);
-        const data = await res.json();
-        const items = data?.result?.items || [];
-        
-        marketBody.innerHTML = "";
-        if (items.length > 0) {
-            items.sort((a,b) => new Date(b.latestTransaction.date) - new Date(a.latestTransaction.date));
-            let total = 0;
-            items.slice(0, 5).forEach(s => {
-                total += s.latestTransaction.pricePaid;
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td class="p-4 text-gray-500">${s.latestTransaction.date}</td>
-                    <td class="p-4 text-white font-medium">${s.paon || ''} ${s.street || ''}</td>
-                    <td class="p-4 uppercase text-gray-500 text-[9px]">${s.propertyType?.label || 'UNIT'}</td>
-                    <td class="p-4 font-bold text-green-500">£${s.latestTransaction.pricePaid.toLocaleString()}</td>
-                `;
-                marketBody.appendChild(row);
-            });
-            document.getElementById('valMetric').innerText = `AVG: £${Math.round(total/Math.min(items.length,5)).toLocaleString()}`;
-        } else {
-            marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center text-gray-700 font-mono'>NO MARKET RECORDS</td></tr>";
-        }
+        const text = await res.text();
+        return JSON.parse(text);
     } catch (e) {
-        marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center text-red-900 font-mono text-[9px]'>MARKET_API_OFFLINE</td></tr>";
+        console.error("JSON Parse Fail:", e);
+        return null;
     }
 }
 
-async function loadEnvData(pc) {
-    try {
-        const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(`https://environment.data.gov.uk/flood-monitoring/id/stations?postcode=${pc}`)}`);
-        const data = await res.json();
-        const isRisk = data?.items?.length > 0;
-        const el = document.getElementById('floodStatus');
-        el.innerText = isRisk ? "MONITORING_ACTIVE" : "NEGATIVE";
-        el.className = isRisk ? "indicator-red" : "indicator-green";
-    } catch (e) {
-        document.getElementById('floodStatus').innerText = "ERROR";
-    }
-}
-
-async function loadGeoData(pc) {
-    const container = document.getElementById('schoolList');
-    try {
-        const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(`https://api.getthedata.com/postcode/${pc}`)}`);
-        const geo = await res.json();
-        if (geo?.data) {
-            container.innerHTML = "";
-            const points = [
-                { k: "CONSTITUENCY", v: geo.data.parliamentary_constituency },
-                { k: "DISTRICT", v: geo.data.admin_district },
-                { k: "WARD", v: geo.data.admin_ward }
-            ];
-            points.forEach(p => {
-                const div = document.createElement('div');
-                div.className = "bg-black p-3 border border-gray-900 rounded";
-                div.innerHTML = `<div class="text-[9px] text-gray-500 uppercase font-black">${p.k}</div><div class="text-[11px] text-white font-bold mt-1">${p.v || 'N/A'}</div>`;
-                container.appendChild(div);
-            });
-        }
-    } catch (e) {
-        container.innerHTML = "<div class='text-gray-800 text-[10px] uppercase'>GEO_API_OFFLINE</div>";
-    }
-}
-
-// Ensure handleDiscovery handles EPC failure without crashing
+// --- 2. DISCOVERY ---
 async function handleDiscovery() {
     const input = document.getElementById('mainInput').value.trim();
     document.getElementById('addressSelectorContainer').classList.add('hidden');
     document.getElementById('dashboard').classList.add('hidden');
 
-    if (/^\d{1,12}$/.test(input)) {
-        await fetchByUprn(input);
-    } else if (input.match(/[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}/i)) {
-        const pc = input.match(/[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}/i)[0].toUpperCase().replace(/\s/g, '');
-        // FALLBACK: We start the audit with just the postcode if the EPC search fails
-        try {
-            updateStatus("EPC_SEARCH...", "loading");
-            const target = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${pc}`;
-            const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(target)}`);
-            const data = await res.json();
-            
-            if (data?.rows?.length > 0) {
-                currentEpcRows = data.rows;
-                renderAddressList(currentEpcRows);
-            } else {
-                throw new Error("EPC_EMPTY");
-            }
-        } catch (e) {
-            updateStatus("EPC_MISSING - LOADING MARKET ONLY", "error");
-            // If EPC fails, we bypass the dropdown and load the dashboard with just the postcode
-            initiateFinalAudit({ postcode: pc, address: "Unknown Property", uprn: "N/A" });
+    // Path A: Zoopla URL
+    if (input.includes("zoopla.co.uk")) {
+        updateStatus("SCRAPING ZOOPLA...", "loading");
+        const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(input)}`);
+        const data = await safeParse(res);
+        if (data?.extractedUprn) {
+            await fetchByUprn(data.extractedUprn);
+        } else {
+            updateStatus("UPRN NOT FOUND IN URL", "error");
         }
+        return;
     }
+
+    // Path B: UPRN Direct
+    if (/^\d+$/.test(input)) {
+        await fetchByUprn(input);
+        return;
+    }
+
+    // Path C: Postcode
+    const pcMatch = input.match(/([A-Z][A-HJ-Y]?[0-9][A-Z0-9]?\s?[0-9][A-Z]{2})/i);
+    if (pcMatch) {
+        const pc = pcMatch[0].toUpperCase().replace(/\s/g, '');
+        await searchByPostcode(pc);
+    }
+}
+
+async function fetchByUprn(uprn) {
+    updateStatus(`QUERYING UPRN: ${uprn}`, "loading");
+    const target = `https://epc.opendatacommunities.org/api/v1/domestic/search?uprn=${uprn}`;
+    const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(target)}`);
+    const data = await safeParse(res);
+    
+    if (data?.rows?.length > 0) {
+        initiateFinalAudit(data.rows[0]);
+    } else {
+        updateStatus("EPC DATA MISSING", "error");
+        // Fallback: Start audit with empty EPC record
+        initiateFinalAudit({ uprn: uprn, address: "Manual Entry", postcode: "" });
+    }
+}
+
+async function searchByPostcode(pc) {
+    updateStatus("SCANNING REGISTRY...", "loading");
+    const target = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${pc}`;
+    const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(target)}`);
+    const data = await safeParse(res);
+
+    if (data?.rows?.length > 0) {
+        currentEpcRows = data.rows;
+        renderAddressList(currentEpcRows);
+        updateStatus("SELECT ADDRESS", "success");
+    } else {
+        updateStatus("NO EPC FOUND", "error");
+        initiateFinalAudit({ postcode: pc, address: "Postcode Search", uprn: "N/A" });
+    }
+}
+
+// --- 3. MODULE LOADING ---
+function renderAddressList(rows) {
+    const container = document.getElementById('addressSelectorContainer');
+    const dropdown = document.getElementById('addressDropdown');
+    dropdown.innerHTML = '<option value="">-- SELECT UNIT --</option>';
+    rows.forEach((row, i) => {
+        const opt = document.createElement('option');
+        opt.value = i; opt.textContent = row.address; dropdown.appendChild(opt);
+    });
+    container.classList.remove('hidden');
+}
+
+async function selectAddress() {
+    const idx = document.getElementById('addressDropdown').value;
+    if (idx !== "") initiateFinalAudit(currentEpcRows[idx]);
+}
+
+async function initiateFinalAudit(epc) {
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('displayAddress').innerText = epc.address;
+    document.getElementById('displayUprn').innerText = epc.uprn || "N/A";
+    document.getElementById('epcBadge').innerText = epc['current-energy-rating'] || "?";
+
+    const pc = epc.postcode;
+    if (!pc) return;
+
+    // Load Market
+    const marketBody = document.getElementById('marketBody');
+    marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center animate-pulse'>LOADING...</td></tr>";
+    
+    const formattedPc = pc.includes(' ') ? pc : pc.slice(0, -3) + ' ' + pc.slice(-3);
+    const lrRes = await fetch(`${PROXY_URL}?url=${encodeURIComponent(`https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(formattedPc)}&_limit=5`)}`);
+    const lrData = await safeParse(lrRes);
+    
+    marketBody.innerHTML = "";
+    const sales = lrData?.result?.items || [];
+    if (sales.length > 0) {
+        sales.forEach(s => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td class='p-4 text-gray-500'>${s.latestTransaction.date}</td><td class='p-4 text-white'>${s.paon} ${s.street}</td><td class='p-4 uppercase'>${s.propertyType.label}</td><td class='p-4 text-green-500 font-bold'>£${s.latestTransaction.pricePaid.toLocaleString()}</td>`;
+            marketBody.appendChild(row);
+        });
+    }
+
+    // Load Geo/Constituency
+    const schoolList = document.getElementById('schoolList');
+    const geoRes = await fetch(`${PROXY_URL}?url=${encodeURIComponent(`https://api.getthedata.com/postcode/${pc.replace(/\s/g,'')}`)}`);
+    const geoData = await safeParse(geoRes);
+    if (geoData?.data) {
+        schoolList.innerHTML = `
+            <div class='bg-black p-3 border border-gray-900 rounded'><div class='text-[9px] text-gray-500'>WARD</div><div class='text-white font-bold'>${geoData.data.admin_ward}</div></div>
+            <div class='bg-black p-3 border border-gray-900 rounded'><div class='text-[9px] text-gray-500'>DISTRICT</div><div class='text-white font-bold'>${geoData.data.admin_district}</div></div>
+            <div class='bg-black p-3 border border-gray-900 rounded'><div class='text-[9px] text-gray-500'>CONSTITUENCY</div><div class='text-white font-bold'>${geoData.data.parliamentary_constituency}</div></div>
+        `;
+    }
+    updateStatus("AUDIT LOADED", "success");
 }
