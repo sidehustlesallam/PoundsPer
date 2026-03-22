@@ -8,13 +8,14 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;900&display=swap');
         :root { --bg: #05070a; --panel: #0c0e12; --border: #1a1e26; --text: #a1a7b3; }
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; }
         .data-mono { font-family: 'Roboto Mono', monospace; }
         .audit-panel { background-color: var(--panel); border: 1px solid var(--border); border-radius: 4px; }
         .audit-header { text-transform: uppercase; font-size: 10px; font-weight: 900; letter-spacing: 0.1em; color: #4b5563; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
         input { background-color: #000; border: 1px solid #2d3748; color: #fff; font-family: 'Roboto Mono', monospace; }
         .indicator-red { color: #ef4444; font-weight: bold; }
         .indicator-green { color: #22c55e; font-weight: bold; }
+        select { background-color: #000; color: #fff; border: 1px solid #2d3748; }
     </style>
 </head>
 <body class="min-h-screen">
@@ -22,26 +23,26 @@
     <nav class="p-4 border-b border-gray-900 flex justify-between items-center bg-black">
         <div class="flex items-baseline gap-1">
             <span class="text-xl font-black text-white italic">£PER</span>
-            <span class="data-mono text-[9px] text-gray-600">v11.4_CORE</span>
+            <span class="data-mono text-[9px] text-gray-600">v11.5_CORE</span>
         </div>
         <div class="flex items-center gap-3 data-mono text-[10px]">
-            <span id="statusText">READY</span>
+            <span id="statusText">SYSTEM_READY</span>
             <div id="statusDot" class="w-1.5 h-1.5 bg-gray-700 rounded-full"></div>
         </div>
     </nav>
 
     <main class="max-w-7xl mx-auto p-6 space-y-8">
         
-        <section class="max-w-4xl mx-auto py-8">
-            <h1 class="text-[10px] uppercase font-black text-gray-600 tracking-widest mb-3">Asset Discovery (Postcode or UPRN)</h1>
+        <section class="max-w-4xl mx-auto py-8 text-center">
+            <h1 class="text-[10px] uppercase font-black text-gray-600 tracking-widest mb-3">Asset Discovery (Zoopla URL, Postcode, or UPRN)</h1>
             <div class="flex flex-col md:flex-row gap-3">
-                <input type="text" id="mainInput" placeholder="ENTER POSTCODE OR 12-DIGIT UPRN" class="flex-grow px-5 py-4 text-sm rounded outline-none focus:border-white">
-                <button onclick="handleDiscovery()" class="bg-white hover:bg-gray-200 text-black px-10 py-4 rounded text-xs font-black uppercase">EXECUTE_SCAN</button>
+                <input type="text" id="mainInput" placeholder="PASTE URL OR ENTER UPRN/POSTCODE" class="flex-grow px-5 py-4 text-sm rounded outline-none focus:border-white">
+                <button onclick="handleDiscovery()" class="bg-white hover:bg-gray-200 text-black px-10 py-4 rounded text-xs font-black uppercase transition-all">EXECUTE_SCAN</button>
             </div>
 
-            <div id="addressSelectorContainer" class="hidden mt-6 p-4 border border-dashed border-gray-800 bg-blue-950/10">
-                <select id="addressDropdown" onchange="selectAddress()" class="w-full bg-black border border-gray-700 p-4 text-white text-sm focus:outline-none">
-                    <option value="">-- SELECT RESOLVED ADDRESS --</option>
+            <div id="addressSelectorContainer" class="hidden mt-6 p-4 border border-dashed border-gray-800 bg-blue-950/10 rounded">
+                <select id="addressDropdown" onchange="selectAddress()" class="w-full p-4 text-sm focus:outline-none rounded">
+                    <option value="">-- SELECT RESOLVED UNIT --</option>
                 </select>
             </div>
         </section>
@@ -50,26 +51,29 @@
             
             <div class="audit-panel p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <div class="audit-header mb-2">Subject Asset</div>
+                    <div class="audit-header mb-2">Primary Asset Address</div>
                     <h2 id="displayAddress" class="text-2xl font-black text-white tracking-tight">--</h2>
                     <div class="data-mono text-[10px] mt-2 text-gray-500">
-                        UPRN: <span id="displayUprn" class="text-blue-500 font-bold">--</span>
+                        UPRN_ID: <span id="displayUprn" class="text-blue-500 font-bold">--</span>
                     </div>
                 </div>
-                <div id="epcBadge" class="data-mono text-4xl font-black px-6 py-4 bg-white text-black rounded italic">--</div>
+                <div class="text-center">
+                    <div class="audit-header mb-2 text-center">EPC_RATING</div>
+                    <div id="epcBadge" class="data-mono text-4xl font-black px-8 py-4 bg-white text-black rounded italic">--</div>
+                </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div class="audit-panel p-6 space-y-4">
                     <div class="audit-header">Environmental Risk</div>
                     <div class="space-y-3 data-mono text-[11px]">
-                        <div class="flex justify-between"><span>FLOOD_ZONE:</span><span id="floodStatus">--</span></div>
-                        <div class="flex justify-between"><span>RADON_POTENTIAL:</span><span id="radonStatus">--</span></div>
+                        <div class="flex justify-between"><span>FLOOD_RISK:</span><span id="floodStatus">--</span></div>
+                        <div class="flex justify-between"><span>RADON_POTENTIAL:</span><span id="radonStatus" class="indicator-green">STABLE</span></div>
                     </div>
                 </div>
 
                 <div class="audit-panel p-6 col-span-1 md:col-span-2">
-                    <div class="audit-header mb-4">Closest Education Providers</div>
+                    <div class="audit-header mb-4">Regional Geography & Context</div>
                     <div id="schoolList" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         </div>
                 </div>
@@ -77,21 +81,23 @@
 
             <div class="audit-panel overflow-hidden">
                 <div class="p-4 bg-gray-900/30 border-b border-gray-800 flex justify-between items-center">
-                    <div class="audit-header border-none p-0">Recent Postcode Market Activity (Top 5)</div>
-                    <div class="data-mono text-[10px]">AVG_VAL: <span id="valMetric" class="text-white font-bold">£0/m²</span></div>
+                    <div class="audit-header border-none p-0">Recent Postcode Transactions</div>
+                    <div class="data-mono text-[10px] text-gray-400"><span id="valMetric" class="text-white font-bold">CALCULATING...</span></div>
                 </div>
-                <table class="w-full text-left data-mono text-[11px]">
-                    <thead class="bg-black/50 text-gray-500">
-                        <tr>
-                            <th class="p-4 font-bold">DATE</th>
-                            <th class="p-4 font-bold">ADDRESS</th>
-                            <th class="p-4 font-bold">TYPE</th>
-                            <th class="p-4 font-bold">PRICE_PAID</th>
-                        </tr>
-                    </thead>
-                    <tbody id="marketBody" class="divide-y divide-gray-900 text-gray-300">
-                        </tbody>
-                </table>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left data-mono text-[11px]">
+                        <thead class="bg-black/50 text-gray-500">
+                            <tr>
+                                <th class="p-4 font-bold">DATE</th>
+                                <th class="p-4 font-bold">ADDRESS</th>
+                                <th class="p-4 font-bold">TYPE</th>
+                                <th class="p-4 font-bold">PRICE_PAID</th>
+                            </tr>
+                        </thead>
+                        <tbody id="marketBody" class="divide-y divide-gray-900 text-gray-300">
+                            </tbody>
+                    </table>
+                </div>
             </div>
 
         </section>
