@@ -7,103 +7,94 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;900&display=swap');
-        :root { --bg: #05070a; --panel: #0c0e12; --border: #1a1e26; --text: #a1a7b3; --accent: #f8fafc; }
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); letter-spacing: -0.01em; }
+        :root { --bg: #05070a; --panel: #0c0e12; --border: #1a1e26; --text: #a1a7b3; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); }
         .data-mono { font-family: 'Roboto Mono', monospace; }
         .audit-panel { background-color: var(--panel); border: 1px solid var(--border); border-radius: 4px; }
         .audit-header { text-transform: uppercase; font-size: 10px; font-weight: 900; letter-spacing: 0.1em; color: #4b5563; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
-        input#mainInput { background-color: #000; border: 1px solid #2d3748; color: #fff; font-family: 'Roboto Mono', monospace; }
+        input { background-color: #000; border: 1px solid #2d3748; color: #fff; font-family: 'Roboto Mono', monospace; }
         .indicator-red { color: #ef4444; font-weight: bold; }
         .indicator-green { color: #22c55e; font-weight: bold; }
-        select { background-color: #111; border: 1px solid #333; color: #fff; border-radius: 4px; appearance: auto; }
     </style>
 </head>
 <body class="min-h-screen">
 
     <nav class="p-4 border-b border-gray-900 flex justify-between items-center bg-black">
         <div class="flex items-baseline gap-1">
-            <span class="text-xl font-black text-white tracking-tighter">£PER</span>
-            <span class="data-mono text-[9px] text-gray-600">v10.6_SECURE_AUDIT</span>
+            <span class="text-xl font-black text-white italic">£PER</span>
+            <span class="data-mono text-[9px] text-gray-600">v11.0_CORE</span>
         </div>
         <div class="flex items-center gap-3 data-mono text-[10px]">
-            <span id="statusText" class="text-gray-500">READY</span>
+            <span id="statusText">READY</span>
             <div id="statusDot" class="w-1.5 h-1.5 bg-gray-700 rounded-full"></div>
         </div>
     </nav>
 
-    <main class="max-w-7xl mx-auto p-6 md:p-10 space-y-10">
+    <main class="max-w-7xl mx-auto p-6 space-y-8">
         
-        <section class="max-w-4xl mx-auto py-12 border-b border-gray-900">
-            <h1 class="text-xs uppercase font-black text-gray-600 tracking-widest mb-3">Postcode Discovery</h1>
+        <section class="max-w-4xl mx-auto py-8">
+            <h1 class="text-[10px] uppercase font-black text-gray-600 tracking-widest mb-3">Asset Discovery (Postcode or UPRN)</h1>
             <div class="flex flex-col md:flex-row gap-3">
-                <input type="text" id="mainInput" placeholder="EX: SW1A 1AA" onkeydown="if(event.key === 'Enter') handleDiscovery()" class="flex-grow px-5 py-4 text-sm rounded outline-none focus:border-white">
-                <button onclick="handleDiscovery()" class="bg-white hover:bg-gray-200 text-black px-10 py-4 rounded text-xs font-black uppercase tracking-widest">RUN_SCAN</button>
+                <input type="text" id="mainInput" placeholder="ENTER POSTCODE OR 12-DIGIT UPRN" class="flex-grow px-5 py-4 text-sm rounded outline-none focus:border-white">
+                <button onclick="handleDiscovery()" class="bg-white hover:bg-gray-200 text-black px-10 py-4 rounded text-xs font-black uppercase">EXECUTE_SCAN</button>
             </div>
 
-            <div id="addressSelectorContainer" class="hidden mt-6 p-6 border border-dashed border-gray-700 rounded bg-blue-900/5">
-                <label class="data-mono text-[10px] text-blue-400 mb-3 block uppercase font-bold">Multiple Assets Detected - Resolve Unit:</label>
-                <select id="addressDropdown" onchange="selectAddress()" class="w-full px-4 py-4 text-sm font-bold cursor-pointer">
-                    <option value="">-- INITIALIZING LIST --</option>
+            <div id="addressSelectorContainer" class="hidden mt-6 p-4 border border-dashed border-gray-800 bg-blue-950/10">
+                <select id="addressDropdown" onchange="selectAddress()" class="w-full bg-black border border-gray-700 p-4 text-white text-sm focus:outline-none">
+                    <option value="">-- SELECT RESOLVED ADDRESS --</option>
                 </select>
             </div>
         </section>
 
-        <section id="dashboard" class="hidden space-y-8">
+        <section id="dashboard" class="hidden space-y-6">
+            
             <div class="audit-panel p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <div class="audit-header mb-2">Subject Asset: Primary Key</div>
-                    <h2 id="displayAddress" class="text-2xl font-black text-white italic tracking-tight">--</h2>
-                    <div class="data-mono text-[10px] mt-2 flex gap-4">
-                        <span class="text-gray-500">UPRN: <span id="displayUprn" class="text-blue-500 font-bold">--</span></span>
-                        <a id="mapLink" target="_blank" class="text-gray-400 hover:text-white underline text-[9px]">[GOOGLE_MAPS]</a>
+                    <div class="audit-header mb-2">Subject Asset</div>
+                    <h2 id="displayAddress" class="text-2xl font-black text-white tracking-tight">--</h2>
+                    <div class="data-mono text-[10px] mt-2 text-gray-500">
+                        UPRN: <span id="displayUprn" class="text-blue-500 font-bold">--</span>
                     </div>
                 </div>
-                <div id="epcBadge" class="data-mono text-3xl font-black px-5 py-3 bg-white text-black rounded leading-none">--</div>
+                <div id="epcBadge" class="data-mono text-4xl font-black px-6 py-4 bg-white text-black rounded italic">--</div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="audit-panel p-6">
-                    <div class="audit-header">Valuation: Street Avg</div>
-                    <div class="flex items-baseline gap-2 mt-3"><span id="valMetric" class="text-5xl font-black text-white">£0</span><span class="data-mono text-xs text-gray-500">/m²</span></div>
-                </div>
-
-                <div class="audit-panel p-6">
-                    <div class="audit-header">Hazards & Risks</div>
-                    <div class="mt-4 space-y-3 data-mono text-[11px]">
-                        <div class="flex justify-between"><span>FLOOD:</span><span id="floodStatus">--</span></div>
-                        <div class="flex justify-between"><span>RADON:</span><span id="radonStatus">--</span></div>
+                <div class="audit-panel p-6 space-y-4">
+                    <div class="audit-header">Environmental Risk</div>
+                    <div class="space-y-3 data-mono text-[11px]">
+                        <div class="flex justify-between"><span>FLOOD_ZONE:</span><span id="floodStatus">--</span></div>
+                        <div class="flex justify-between"><span>RADON_POTENTIAL:</span><span id="radonStatus">--</span></div>
                     </div>
-                    <div id="riskLevel" class="text-[9px] mt-4 p-2 rounded data-mono border border-gray-900">--</div>
                 </div>
 
-                <div class="audit-panel p-6">
-                    <div class="audit-header">Structural: Area</div>
-                    <div class="flex items-baseline gap-2 mt-3"><span id="displaySize" class="text-4xl font-black text-white">0</span><span class="data-mono text-xs text-gray-500">m² (GIA)</span></div>
+                <div class="audit-panel p-6 col-span-1 md:col-span-2">
+                    <div class="audit-header mb-4">Closest Education Providers</div>
+                    <div id="schoolList" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        </div>
                 </div>
             </div>
-            
-            <div class="audit-panel p-6">
-                <div class="audit-header mb-4">Heating & Infrastructure</div>
-                <div id="epcHeating" class="data-mono text-xs text-white uppercase font-bold">--</div>
+
+            <div class="audit-panel overflow-hidden">
+                <div class="p-4 bg-gray-900/30 border-b border-gray-800 flex justify-between items-center">
+                    <div class="audit-header border-none p-0">Recent Postcode Market Activity (Top 5)</div>
+                    <div class="data-mono text-[10px]">AVG_VAL: <span id="valMetric" class="text-white font-bold">£0/m²</span></div>
+                </div>
+                <table class="w-full text-left data-mono text-[11px]">
+                    <thead class="bg-black/50 text-gray-500">
+                        <tr>
+                            <th class="p-4 font-bold">DATE</th>
+                            <th class="p-4 font-bold">ADDRESS</th>
+                            <th class="p-4 font-bold">TYPE</th>
+                            <th class="p-4 font-bold">PRICE_PAID</th>
+                        </tr>
+                    </thead>
+                    <tbody id="marketBody" class="divide-y divide-gray-900 text-gray-300">
+                        </tbody>
+                </table>
             </div>
+
         </section>
-        <section id="historySection" class="hidden space-y-4">
-    <div class="audit-header">Asset Transaction Ledger (Land Registry)</div>
-    <div class="audit-panel overflow-hidden">
-        <table class="w-full text-left data-mono text-[11px]">
-            <thead>
-                <tr class="border-b border-gray-900 bg-black/40">
-                    <th class="p-4 text-gray-500 font-bold">DATE</th>
-                    <th class="p-4 text-gray-500 font-bold">PRICE_PAID</th>
-                    <th class="p-4 text-gray-500 font-bold">TYPE</th>
-                    <th class="p-4 text-gray-500 font-bold">RECORD_ID</th>
-                </tr>
-            </thead>
-            <tbody id="historyBody" class="divide-y divide-gray-900">
-                </tbody>
-        </table>
-    </div>
-</section>
     </main>
 
     <script src="app.js"></script>
