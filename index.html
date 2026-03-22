@@ -8,90 +8,106 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;900&display=swap');
         :root { --bg: #05070a; --panel: #0c0e12; --border: #1a1e26; --text: #a1a7b3; }
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; overflow-x: hidden; }
         .data-mono { font-family: 'Roboto Mono', monospace; }
         .audit-panel { background-color: var(--panel); border: 1px solid var(--border); border-radius: 4px; }
         .audit-header { text-transform: uppercase; font-size: 10px; font-weight: 900; letter-spacing: 0.1em; color: #4b5563; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
         input { background-color: #000; border: 1px solid #2d3748; color: #fff; font-family: 'Roboto Mono', monospace; }
-        .indicator-red { color: #ef4444; font-weight: bold; }
-        .indicator-green { color: #22c55e; font-weight: bold; }
+        .indicator-green { color: #22c55e; text-shadow: 0 0 8px rgba(34, 197, 94, 0.2); }
+        .indicator-red { color: #ef4444; }
         select { background-color: #000; color: #fff; border: 1px solid #2d3748; }
+        /* Custom scrollbar for that terminal feel */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: #05070a; }
+        ::-webkit-scrollbar-thumb { background: #1a1e26; }
     </style>
 </head>
 <body class="min-h-screen">
 
-    <nav class="p-4 border-b border-gray-900 flex justify-between items-center bg-black">
+    <nav class="p-4 border-b border-gray-900 flex justify-between items-center bg-black sticky top-0 z-50">
         <div class="flex items-baseline gap-1">
-            <span class="text-xl font-black text-white italic">£PER</span>
-            <span class="data-mono text-[9px] text-gray-600">v11.6_CORE</span>
+            <span class="text-xl font-black text-white italic tracking-tighter">£PER</span>
+            <span class="data-mono text-[9px] text-gray-600">v11.7_STABLE</span>
         </div>
         <div class="flex items-center gap-3 data-mono text-[10px]">
-            <span id="statusText">SYSTEM_READY</span>
+            <span id="statusText" class="text-gray-400">SYSTEM_READY</span>
             <div id="statusDot" class="w-1.5 h-1.5 bg-gray-700 rounded-full"></div>
         </div>
     </nav>
 
     <main class="max-w-7xl mx-auto p-6 space-y-8">
         
-        <section class="max-w-4xl mx-auto py-8 text-center">
-            <h1 class="text-[10px] uppercase font-black text-gray-600 tracking-widest mb-3">Asset Discovery (Zoopla URL, Postcode, or UPRN)</h1>
-            <div class="flex flex-col md:flex-row gap-3">
-                <input type="text" id="mainInput" placeholder="PASTE URL OR ENTER UPRN/POSTCODE" class="flex-grow px-5 py-4 text-sm rounded outline-none focus:border-white">
-                <button onclick="handleDiscovery()" class="bg-white hover:bg-gray-200 text-black px-10 py-4 rounded text-xs font-black uppercase transition-all">EXECUTE_SCAN</button>
+        <section class="max-w-4xl mx-auto py-12 text-center">
+            <h1 class="text-[10px] uppercase font-black text-gray-600 tracking-widest mb-4">Asset Discovery Engine</h1>
+            <div class="flex flex-col md:flex-row gap-2">
+                <input type="text" id="mainInput" placeholder="PASTE ZOOPLA URL, UPRN, OR POSTCODE" class="flex-grow px-5 py-4 text-sm rounded-sm outline-none focus:border-blue-500 transition-colors">
+                <button onclick="handleDiscovery()" class="bg-white hover:bg-blue-50 text-black px-10 py-4 rounded-sm text-xs font-black uppercase transition-all active:scale-95">
+                    EXECUTE_SCAN
+                </button>
             </div>
 
-            <div id="addressSelectorContainer" class="hidden mt-6 p-4 border border-dashed border-gray-800 bg-blue-950/10 rounded">
-                <select id="addressDropdown" onchange="selectAddress()" class="w-full p-4 text-sm focus:outline-none rounded">
-                    <option value="">-- SELECT RESOLVED UNIT --</option>
-                </select>
+            <div id="addressSelectorContainer" class="hidden mt-4 p-2 border border-blue-900/30 bg-blue-950/5 rounded animate-in fade-in duration-500">
+                <select id="addressDropdown" onchange="selectAddress()" class="w-full p-3 text-xs focus:outline-none rounded-sm cursor-pointer">
+                    </select>
             </div>
         </section>
 
-        <section id="dashboard" class="hidden space-y-6">
+        <section id="dashboard" class="hidden space-y-6 animate-in slide-in-from-bottom-4 duration-700">
             
-            <div class="audit-panel p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                    <div class="audit-header mb-2">Primary Asset Address</div>
-                    <h2 id="displayAddress" class="text-2xl font-black text-white tracking-tight">--</h2>
-                    <div class="data-mono text-[10px] mt-2 text-gray-500">
-                        UPRN_ID: <span id="displayUprn" class="text-blue-500 font-bold">--</span>
+            <div class="audit-panel p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div class="space-y-2">
+                    <div class="audit-header">Registered Asset Location</div>
+                    <h2 id="displayAddress" class="text-3xl font-black text-white tracking-tight leading-none">--</h2>
+                    <div class="flex flex-wrap gap-6 pt-2 data-mono text-[11px]">
+                        <div><span class="text-gray-600">UPRN:</span> <span id="displayUprn" class="text-blue-500 font-bold">--</span></div>
+                        <div><span class="text-gray-600">INTERNAL_AREA:</span> <span id="sqftMetric" class="text-white font-bold">--</span></div>
                     </div>
                 </div>
-                <div class="text-center">
-                    <div class="audit-header mb-2 text-center">EPC_RATING</div>
-                    <div id="epcBadge" class="data-mono text-4xl font-black px-8 py-4 bg-white text-black rounded italic">--</div>
+                <div class="flex flex-col items-center justify-center border-l border-gray-900 pl-0 md:pl-10">
+                    <div class="audit-header mb-3 w-full text-center">EPC_CERT</div>
+                    <div id="epcBadge" class="data-mono text-5xl font-black px-10 py-6 bg-white text-black rounded-sm shadow-xl shadow-white/5 italic">
+                        --
+                    </div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="audit-panel p-6 space-y-4">
-                    <div class="audit-header">Environmental Risk</div>
-                    <div class="space-y-3 data-mono text-[11px]">
-                        <div class="flex justify-between"><span>FLOOD_RISK:</span><span id="floodStatus">--</span></div>
-                        <div class="flex justify-between"><span>RADON_POTENTIAL:</span><span id="radonStatus" class="indicator-green">STABLE</span></div>
+                <div class="audit-panel p-6">
+                    <div class="audit-header mb-4">Risk Assessment</div>
+                    <div class="space-y-4 data-mono text-[11px]">
+                        <div class="flex justify-between items-center py-2 border-b border-gray-900/50">
+                            <span class="text-gray-500">FLOOD_ZONE:</span>
+                            <span id="floodStatus" class="font-bold">--</span>
+                        </div>
+                        <div class="flex justify-between items-center py-2 border-b border-gray-900/50">
+                            <span class="text-gray-500">RADON_RISK:</span>
+                            <span id="radonStatus" class="indicator-green font-bold">STABLE</span>
+                        </div>
                     </div>
                 </div>
 
                 <div class="audit-panel p-6 col-span-1 md:col-span-2">
-                    <div class="audit-header mb-4">Regional Geography & Context</div>
+                    <div class="audit-header mb-4">Local Education Infrastructure</div>
                     <div id="schoolList" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         </div>
                 </div>
             </div>
 
             <div class="audit-panel overflow-hidden">
-                <div class="p-4 bg-gray-900/30 border-b border-gray-800 flex justify-between items-center">
-                    <div class="audit-header border-none p-0">Recent Postcode Transactions</div>
-                    <div class="data-mono text-[10px] text-gray-400"><span id="valMetric" class="text-white font-bold">CALCULATING...</span></div>
+                <div class="p-5 bg-gray-900/20 border-b border-gray-900 flex justify-between items-center">
+                    <div class="audit-header border-none p-0">Land Registry PPI (Last 5 Sales)</div>
+                    <div class="data-mono text-[10px] text-gray-500">
+                        VALUATION_EST: <span id="valMetric" class="text-green-500 font-bold tracking-tighter uppercase">CALCULATING...</span>
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left data-mono text-[11px]">
-                        <thead class="bg-black/50 text-gray-500">
+                        <thead class="bg-black/40 text-gray-500">
                             <tr>
-                                <th class="p-4 font-bold">DATE</th>
-                                <th class="p-4 font-bold">ADDRESS</th>
-                                <th class="p-4 font-bold">TYPE</th>
-                                <th class="p-4 font-bold">PRICE_PAID</th>
+                                <th class="p-4 font-bold">TRANSFER_DATE</th>
+                                <th class="p-4 font-bold">STREET_ADDRESS</th>
+                                <th class="p-4 font-bold">ASSET_TYPE</th>
+                                <th class="p-4 font-bold">CONSIDERATION</th>
                             </tr>
                         </thead>
                         <tbody id="marketBody" class="divide-y divide-gray-900 text-gray-300">
