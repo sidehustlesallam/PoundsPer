@@ -1,134 +1,111 @@
-const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/"; 
-let currentEpcRows = [];
+/** * £Per Audit Engine v11.8 
+ * Fix: Multi-format Postcode Routing & API Error Verbosity
+ */
+const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
 
+// --- HELPERS ---
 function updateStatus(msg, type) {
     const text = document.getElementById('statusText');
     const dot = document.getElementById('statusDot');
-    if (!text || !dot) return;
-    text.innerText = msg.toUpperCase();
-    dot.className = `w-1.5 h-1.5 rounded-full ${type === 'loading' ? 'bg-blue-500 animate-pulse' : type === 'error' ? 'bg-red-600' : 'bg-green-500 shadow-[0_0_8px_green]'}`;
+    if (text) text.innerText = msg.toUpperCase();
+    if (dot) dot.className = `w-1.5 h-1.5 rounded-full ${type === 'loading' ? 'bg-blue-500 animate-pulse' : type === 'error' ? 'bg-red-600' : 'bg-green-500 shadow-[0_0_8px_green]'}`;
 }
 
 async function safeFetch(url) {
+    console.log(`%c SCANNING: ${url}`, "color: #3b82f6; font-weight: bold;");
     try {
         const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(url)}`);
-        const text = await res.text();
-        return text ? JSON.parse(text) : null;
+        if (!res.ok) throw new Error(`HTTP_${res.status}`);
+        const data = await res.json();
+        return data;
     } catch (e) {
-        console.error("JSON Guard Triggered:", e);
+        console.error(`Audit Failure for ${url}:`, e);
         return null;
     }
 }
 
-async function handleDiscovery() {
-    const input = document.getElementById('mainInput').value.trim();
-    document.getElementById('addressSelectorContainer').classList.add('hidden');
-    document.getElementById('dashboard').classList.add('hidden');
-
-    if (/^\d+$/.test(input)) {
-        await fetchByUprn(input);
-    } else {
-        const pcMatch = input.match(/([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})/i);
-        if (pcMatch) await searchByPostcode(pcMatch[0].toUpperCase());
-    }
-}
-
-async function fetchByUprn(uprn) {
-    updateStatus("FETCHING_EPC", "loading");
-    const data = await safeFetch(`https://epc.opendatacommunities.org/api/v1/domestic/search?uprn=${uprn}`);
-    if (data?.rows?.length > 0) initiateFinalAudit(data.rows[0]);
-    else updateStatus("EPC_NOT_FOUND", "error");
-}
-
-async function searchByPostcode(pc) {
-    updateStatus("SCANNING_POSTCODE", "loading");
-    const data = await safeFetch(`https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${pc.replace(/\s/g,'')}`);
-    if (data?.rows?.length > 0) {
-        currentEpcRows = data.rows;
-        renderAddressList(currentEpcRows);
-    } else {
-        initiateFinalAudit({ postcode: pc, address: "POSTCODE_ONLY", uprn: "N/A" });
-    }
-}
-
+// --- ENGINE ---
 async function initiateFinalAudit(epc) {
     document.getElementById('dashboard').classList.remove('hidden');
     
-    // EPC METRICS
-    const m2 = parseFloat(epc['total-floor-area']) || 0;
-    const sqft = Math.round(m2 * 10.764);
-    
+    // 1. SET SUBJECT METRICS
+    const area = parseFloat(epc['total-floor-area']) || 0;
     document.getElementById('displayAddress').innerText = epc.address.toUpperCase();
     document.getElementById('displayUprn').innerText = epc.uprn || "N/A";
     document.getElementById('epcBadge').innerText = epc['current-energy-rating'] || "?";
-    document.getElementById('sqftMetric').innerText = m2 > 0 ? `${sqft} SQFT (${m2}m²)` : "N/A";
+    document.getElementById('sqftMetric').innerText = area > 0 ? `${Math.round(area * 10.764)} SQFT (${area}m²)` : "N/A";
 
-    const pc = epc.postcode;
-    if (pc) {
-        loadMarketData(pc);
-        loadSchoolsData(pc.replace(/\s/g, ''));
-    }
-    updateStatus("AUDIT_READY", "success");
+    // 2. POSTCODE NORMALIZATION
+    let rawPc = epc.postcode || "";
+    let cleanPc = rawPc.replace(/\s+/g, '').toUpperCase(); // SW1A1AA
+    let spacedPc = cleanPc.length > 3 ? cleanPc.slice(0, -3) + " " + cleanPc.slice(-3) : cleanPc; // SW1A 1AA
+
+    console.log(`Normalized Postcodes: Clean[${cleanPc}] Spaced[${spacedPc}]`);
+
+    // 3. FIRE MODULES
+    await Promise.all([
+        loadMarketData(spacedPc),
+        loadSchoolsData(cleanPc)
+    ]);
+
+    updateStatus("AUDIT_COMPLETE", "success");
 }
 
 async function loadMarketData(pc) {
     const marketBody = document.getElementById('marketBody');
-    marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center animate-pulse'>LOADING_MARKET...</td></tr>";
+    marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center animate-pulse'>ACCESSING_LAND_REGISTRY...</td></tr>";
     
-    // Formatting postcode with space for Land Registry
-    const formattedPc = pc.includes(' ') ? pc : pc.slice(0, -3) + ' ' + pc.slice(-3);
-    const data = await safeFetch(`https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(formattedPc)}&_limit=10`);
-    
+    // Land Registry PPI API
+    const url = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(pc)}&_limit=10`;
+    const data = await safeFetch(url);
     const items = data?.result?.items || [];
+
     marketBody.innerHTML = "";
-    
     if (items.length > 0) {
         items.sort((a,b) => new Date(b.latestTransaction.date) - new Date(a.latestTransaction.date));
         items.slice(0, 5).forEach(s => {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td class='p-4 text-gray-500'>${s.latestTransaction.date}</td>
-                <td class='p-4 text-white'>${s.paon || ''} ${s.street || ''}</td>
+                <td class='p-4 text-white font-medium'>${s.paon || ''} ${s.street || ''}</td>
                 <td class='p-4 text-[9px] uppercase'>${s.propertyType?.label || 'UNIT'}</td>
-                <td class='p-4 text-green-500 font-bold'>£${s.latestTransaction.pricePaid.toLocaleString()}</td>
+                <td class='p-4 text-green-500 font-bold'>£${s.latestTransaction.pricePaid?.toLocaleString()}</td>
             `;
             marketBody.appendChild(row);
         });
+        // Calc Avg
+        const avg = items.reduce((acc, curr) => acc + curr.latestTransaction.pricePaid, 0) / items.length;
+        document.getElementById('valMetric').innerText = `£${Math.round(avg).toLocaleString()}`;
     } else {
-        marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center text-gray-600'>NO_RECENT_SALES_FOUND</td></tr>";
+        marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center text-gray-700'>NO_RECENT_PPI_DATA</td></tr>";
+        document.getElementById('valMetric').innerText = "N/A";
     }
 }
 
 async function loadSchoolsData(pc) {
     const container = document.getElementById('schoolList');
-    const data = await safeFetch(`https://api.getthedata.com/schools/postcode/${pc}`);
+    container.innerHTML = "<div class='text-[10px] animate-pulse'>POLLING_OFSTED...</div>";
+
+    // GetTheData Schools API
+    const url = `https://api.getthedata.com/schools/postcode/${pc}`;
+    const data = await safeFetch(url);
     const schools = data?.data || [];
-    
+
     container.innerHTML = "";
-    if (schools.length > 0) {
+    if (schools.length > 0 && Array.isArray(schools)) {
         schools.slice(0, 3).forEach(s => {
             const div = document.createElement('div');
-            div.className = "bg-black p-3 border border-gray-900 rounded";
-            div.innerHTML = `<div class='text-[9px] text-blue-400 font-black uppercase truncate'>${s.school_name}</div><div class='text-[10px] text-white font-bold mt-1'>${s.ofsted_rating || 'N/A'}</div><div class='text-[9px] text-gray-600'>AGES: ${s.age_range || 'N/A'}</div>`;
+            div.className = "bg-black p-3 border border-gray-900 rounded shadow-inner";
+            div.innerHTML = `
+                <div class='text-[9px] text-blue-400 font-black uppercase truncate'>${s.school_name}</div>
+                <div class='text-[11px] text-white font-bold mt-1'>${s.ofsted_rating || 'NOT_RATED'}</div>
+                <div class='text-[9px] text-gray-600 uppercase tracking-tighter'>${s.school_type || 'SCHOOL'} • AGES ${s.age_range || '??'}</div>
+            `;
             container.appendChild(div);
         });
     } else {
-        container.innerHTML = "<div class='text-gray-800 text-[10px] p-2'>NO_LOCAL_SCHOOLS</div>";
+        container.innerHTML = "<div class='text-gray-800 text-[10px] p-2 italic'>DATA_SHIELD_ACTIVE: NO_LOCAL_SCHOOLS</div>";
     }
 }
 
-function renderAddressList(rows) {
-    const container = document.getElementById('addressSelectorContainer');
-    const dropdown = document.getElementById('addressDropdown');
-    dropdown.innerHTML = '<option value="">-- SELECT PROPERTY --</option>';
-    rows.forEach((row, i) => {
-        const opt = document.createElement('option');
-        opt.value = i; opt.textContent = row.address; dropdown.appendChild(opt);
-    });
-    container.classList.remove('hidden');
-}
-
-async function selectAddress() {
-    const idx = document.getElementById('addressDropdown').value;
-    if (idx !== "") initiateFinalAudit(currentEpcRows[idx]);
-}
+// Ensure handleDiscovery and searchByPostcode are still present in your file
