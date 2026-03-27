@@ -1,10 +1,9 @@
 /**
- * £Per Audit Engine v11.9
- * Hardened:
- * - Structured error handling
- * - Promise.allSettled for module isolation
- * - EPC safety wrapper
- * - Multi-format postcode routing
+ * £Per Audit Engine v11.10
+ * - Real EPC discovery (Postcode + UPRN + Zoopla)
+ * - Address selector for postcode searches
+ * - No more simulated UPRN; uses live EPC data
+ * - Hardened error handling and module isolation
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
@@ -61,7 +60,6 @@ async function safeFetch(url) {
       return { error: `HTTP_${res.status}`, raw: data };
     }
 
-    // Worker may still return structured error with 200
     if (data && data.error) {
       console.warn("Upstream logical error:", data);
       return data;
@@ -74,7 +72,23 @@ async function safeFetch(url) {
   }
 }
 
-// --- EPC SAFETY WRAPPER (placeholder EPC object) ---
+// --- EPC FETCH HELPERS ---
+
+async function fetchEpcByPostcode(pc) {
+  const url = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${encodeURIComponent(
+    pc
+  )}`;
+  return await safeFetch(url);
+}
+
+async function fetchEpcByUprn(uprn) {
+  const url = `https://epc.opendatacommunities.org/api/v1/domestic/search?uprn=${encodeURIComponent(
+    uprn
+  )}`;
+  return await safeFetch(url);
+}
+
+// --- EPC SAFETY WRAPPER ---
 
 function normalizeEpc(epcRaw) {
   const epc = epcRaw || {};
@@ -97,7 +111,6 @@ async function initiateFinalAudit(epcRaw) {
 
   const epc = normalizeEpc(epcRaw);
 
-  // 1. SET SUBJECT METRICS
   const addressEl = document.getElementById("displayAddress");
   const uprnEl = document.getElementById("displayUprn");
   const epcBadge = document.getElementById("epcBadge");
@@ -115,20 +128,18 @@ async function initiateFinalAudit(epcRaw) {
     }
   }
 
-  // 2. POSTCODE NORMALIZATION
   let rawPc = epc.postcode || "";
-  let cleanPc = rawPc.replace(/\s+/g, "").toUpperCase(); // SW1A1AA
+  let cleanPc = rawPc.replace(/\s+/g, "").toUpperCase();
   let spacedPc =
     cleanPc.length > 3
       ? cleanPc.slice(0, -3) + " " + cleanPc.slice(-3)
-      : cleanPc; // SW1A 1AA
-  let outwardPc = spacedPc.split(" ")[0] || cleanPc; // SW1A
+      : cleanPc;
+  let outwardPc = spacedPc.split(" ")[0] || cleanPc;
 
   console.log(
     `Normalized Postcodes: Clean[${cleanPc}] Spaced[${spacedPc}] Outward[${outwardPc}]`
   );
 
-  // 3. FIRE MODULES (isolated via allSettled)
   updateStatus("AUDIT_RUNNING", "loading");
 
   const results = await Promise.allSettled([
@@ -263,41 +274,106 @@ async function loadSchoolsData(pc) {
   return data;
 }
 
-// --- DISCOVERY ENTRYPOINTS (STUBS) ---
+// --- DISCOVERY FLOWS ---
 
-// You can wire these to Zoopla / EPC / UPRN flows as before.
-// For now, we keep a minimal placeholder so v11.9 is drop-in compatible.
+async function discoverByPostcode(pc) {
+  updateStatus("POSTCODE_LOOKUP", "loading");
+
+  const data = await fetchEpcByPostcode(pc);
+
+  if (!data || !data.rows || data.rows.length === 0) {
+    updateStatus("NO_EPC_FOR_POSTCODE", "error");
+    return;
+  }
+
+  const addresses = data.rows;
+  const container = document.getElementById("addressSelectorContainer");
+  const dropdown = document.getElementById("addressDropdown");
+
+  dropdown.innerHTML = "";
+  container.classList.remove("hidden");
+
+  addresses.forEach((row, idx) => {
+    const opt = document.createElement("option");
+    opt.value = idx;
+    opt.textContent = row.address;
+    dropdown.appendChild(opt);
+  });
+
+  window.__EPC_ROWS__ = addresses;
+
+  updateStatus("SELECT_ADDRESS", "success");
+}
+
+async function discoverByUprn(uprn) {
+  updateStatus("UPRN_LOOKUP", "loading");
+
+  const data = await fetchEpcByUprn(uprn);
+
+  if (!data || !data.rows || data.rows.length === 0) {
+    updateStatus("NO_EPC_FOR_UPRN", "error");
+    return;
+  }
+
+  const epc = data.rows[0];
+
+  updateStatus("EPC_RESOLVED", "success");
+  await initiateFinalAudit(epc);
+}
+
+// --- INPUT HANDLER ---
 
 async function handleDiscovery() {
-  const input = document.getElementById("mainInput");
-  const value = (input?.value || "").trim();
+  const inputEl = document.getElementById("mainInput");
+  const input = (inputEl?.value || "").trim();
 
-  if (!value) {
+  if (!input) {
     updateStatus("INPUT_REQUIRED", "error");
     return;
   }
 
-  updateStatus("DISCOVERY_RUNNING", "loading");
-  setEpcState("pending", "Awaiting_EPC_Source");
+  // UPRN (all digits, 6–12 chars)
+  if (/^\d{6,12}$/.test(input)) {
+    return discoverByUprn(input);
+  }
 
-  // For now, treat input as "we already have an EPC-like object"
-  // In your real flow, you’d:
-  // - detect Zoopla URL -> call Worker -> get UPRN -> EPC API
-  // - detect postcode -> EPC search
-  // - detect UPRN -> direct EPC lookup
-  const mockEpc = {
-    address: value,
-    uprn: "SIMULATED_UPRN",
-    postcode: "SW1A 1AA",
-    "total-floor-area": 80,
-    "current-energy-rating": "C",
-  };
+  // Postcode (loose UK pattern)
+  if (/^[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}$/.test(input)) {
+    const cleanPc = input.replace(/\s+/g, "").toUpperCase();
+    const spacedPc = cleanPc.slice(0, -3) + " " + cleanPc.slice(-3);
+    return discoverByPostcode(spacedPc);
+  }
 
-  await initiateFinalAudit(mockEpc);
+  // Zoopla URL → Worker extracts UPRN
+  if (input.includes("zoopla.co.uk")) {
+    updateStatus("ZOOPLA_SCRAPE", "loading");
+    const data = await safeFetch(input);
+
+    if (data?.extractedUprn) {
+      return discoverByUprn(data.extractedUprn);
+    }
+
+    updateStatus("NO_UPRN_FOUND", "error");
+    return;
+  }
+
+  updateStatus("UNRECOGNISED_INPUT", "error");
 }
 
+// --- ADDRESS SELECTOR ---
+
 function selectAddress() {
-  // Placeholder for multi-address selection logic
-  // Keep function defined to avoid breaking existing references
-  console.log("selectAddress() invoked - implement address selection logic.");
+  const dropdown = document.getElementById("addressDropdown");
+  const idx = dropdown ? dropdown.value : null;
+  const rows = window.__EPC_ROWS__ || [];
+
+  if (idx === null || !rows[idx]) {
+    updateStatus("INVALID_SELECTION", "error");
+    return;
+  }
+
+  const epc = rows[idx];
+  document.getElementById("addressSelectorContainer").classList.add("hidden");
+
+  initiateFinalAudit(epc);
 }
