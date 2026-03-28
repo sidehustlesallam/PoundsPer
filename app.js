@@ -1,14 +1,15 @@
 /**
- * £Per Audit Engine v11.10
- * - Real EPC discovery (Postcode + UPRN + Zoopla)
- * - Address selector for postcode searches
- * - No more simulated UPRN; uses live EPC data
- * - Hardened error handling and module isolation
+ * £Per Audit Engine v11.13
+ * - EPC + PPI unchanged
+ * - New Schools Module: Live Ofsted HTML Scrape via Worker
+ * - Zero third‑party APIs, zero datasets, zero maintenance
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
 
-// --- STATUS & UI HELPERS ---
+// ------------------------------------------------------------
+//  UI HELPERS
+// ------------------------------------------------------------
 
 function updateStatus(msg, type) {
   const text = document.getElementById("statusText");
@@ -18,13 +19,10 @@ function updateStatus(msg, type) {
   if (!dot) return;
 
   let cls = "w-1.5 h-1.5 rounded-full ";
-  if (type === "loading") {
-    cls += "bg-blue-500 animate-pulse";
-  } else if (type === "error") {
-    cls += "bg-red-600";
-  } else {
-    cls += "bg-green-500 shadow-[0_0_8px_green]";
-  }
+  if (type === "loading") cls += "bg-blue-500 animate-pulse";
+  else if (type === "error") cls += "bg-red-600";
+  else cls += "bg-green-500 shadow-[0_0_8px_green]";
+
   dot.className = cls;
 }
 
@@ -34,6 +32,7 @@ function setEpcState(state, meta = "") {
   if (!badge) return;
 
   badge.classList.remove("epc-error", "epc-pending");
+
   if (state === "pending") {
     badge.classList.add("epc-pending");
     badge.innerText = "?";
@@ -47,55 +46,44 @@ function setEpcState(state, meta = "") {
   }
 }
 
-// --- NETWORK LAYER ---
+// ------------------------------------------------------------
+//  GENERIC PROXY FETCH (EPC / PPI / Zoopla)
+// ------------------------------------------------------------
 
 async function safeFetch(url) {
-  console.log(`%c SCANNING: ${url}`, "color: #3b82f6; font-weight: bold;");
   try {
     const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(url)}`);
     const data = await res.json().catch(() => null);
 
-    if (!res.ok) {
-      console.error("HTTP error:", res.status, data);
-      return { error: `HTTP_${res.status}`, raw: data };
-    }
-
-    if (data && data.error) {
-      console.warn("Upstream logical error:", data);
-      return data;
-    }
+    if (!res.ok) return { error: `HTTP_${res.status}`, raw: data };
+    if (data && data.error) return data;
 
     return data;
   } catch (e) {
-    console.error(`Audit Failure for ${url}:`, e);
     return { error: "NETWORK_EXCEPTION", message: e.message };
   }
 }
 
-// --- EPC FETCH HELPERS ---
+// ------------------------------------------------------------
+//  EPC FETCH
+// ------------------------------------------------------------
 
 async function fetchEpcByPostcode(pc) {
-  const url = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${encodeURIComponent(
-    pc
-  )}`;
+  const url = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${encodeURIComponent(pc)}`;
   return await safeFetch(url);
 }
 
 async function fetchEpcByUprn(uprn) {
-  const url = `https://epc.opendatacommunities.org/api/v1/domestic/search?uprn=${encodeURIComponent(
-    uprn
-  )}`;
+  const url = `https://epc.opendatacommunities.org/api/v1/domestic/search?uprn=${encodeURIComponent(uprn)}`;
   return await safeFetch(url);
 }
-
-// --- EPC SAFETY WRAPPER ---
 
 function normalizeEpc(epcRaw) {
   const epc = epcRaw || {};
   const area = parseFloat(epc["total-floor-area"]) || 0;
 
   return {
-    address: (epc.address || "").toString() || "UNKNOWN_ADDRESS",
+    address: (epc.address || "").toString(),
     uprn: epc.uprn || "N/A",
     postcode: (epc.postcode || "").toString(),
     area,
@@ -103,65 +91,72 @@ function normalizeEpc(epcRaw) {
   };
 }
 
-// --- CORE AUDIT ENGINE ---
+// ------------------------------------------------------------
+//  SCHOOLS MODULE — LIVE OFSTED SCRAPE VIA WORKER
+// ------------------------------------------------------------
 
-async function initiateFinalAudit(epcRaw) {
-  document.getElementById("dashboard").classList.remove("hidden");
-  setEpcState("pending", "EPC_Normalizing");
+async function loadSchoolsFromOfsted(cleanPostcode) {
+  const container = document.getElementById("schoolList");
+  if (!container) return;
 
-  const epc = normalizeEpc(epcRaw);
+  container.innerHTML =
+    "<div class='text-[10px] animate-pulse'>RESOLVING_NEAREST_SCHOOLS...</div>";
 
-  const addressEl = document.getElementById("displayAddress");
-  const uprnEl = document.getElementById("displayUprn");
-  const epcBadge = document.getElementById("epcBadge");
-  const sqftMetric = document.getElementById("sqftMetric");
+  try {
+    const res = await fetch(
+      `${PROXY_URL}?schools=1&postcode=${encodeURIComponent(cleanPostcode)}`
+    );
+    const data = await res.json().catch(() => null);
 
-  if (addressEl) addressEl.innerText = epc.address.toUpperCase();
-  if (uprnEl) uprnEl.innerText = epc.uprn || "N/A";
-  if (epcBadge) epcBadge.innerText = epc.rating || "?";
+    container.innerHTML = "";
 
-  if (sqftMetric) {
-    if (epc.area > 0) {
-      sqftMetric.innerText = `${Math.round(epc.area * 10.764)} SQFT (${epc.area}m²)`;
-    } else {
-      sqftMetric.innerText = "N/A";
+    if (!res.ok || !data || data.error) {
+      container.innerHTML =
+        "<div class='text-red-500 text-[10px] p-2 uppercase'>SCHOOLS_MODULE_ERROR</div>";
+      return data || { error: "SCHOOLS_MODULE_ERROR" };
     }
-  }
 
-  let rawPc = epc.postcode || "";
-  let cleanPc = rawPc.replace(/\s+/g, "").toUpperCase();
-  let spacedPc =
-    cleanPc.length > 3
-      ? cleanPc.slice(0, -3) + " " + cleanPc.slice(-3)
-      : cleanPc;
-  let outwardPc = spacedPc.split(" ")[0] || cleanPc;
+    const schools = Array.isArray(data.schools) ? data.schools : [];
 
-  console.log(
-    `Normalized Postcodes: Clean[${cleanPc}] Spaced[${spacedPc}] Outward[${outwardPc}]`
-  );
+    if (schools.length === 0) {
+      container.innerHTML =
+        "<div class='text-gray-500 text-[10px] p-2 italic'>NO_NEARBY_SCHOOLS_FOUND</div>";
+      return { schools: [] };
+    }
 
-  updateStatus("AUDIT_RUNNING", "loading");
+    schools.slice(0, 3).forEach((s) => {
+      const div = document.createElement("div");
+      div.className = "bg-black p-3 border border-gray-900 rounded shadow-inner";
 
-  const results = await Promise.allSettled([
-    loadMarketData(spacedPc),
-    loadSchoolsData(cleanPc),
-    // future: loadFloodData(outwardPc), loadRadonData(outwardPc), etc.
-  ]);
+      const distanceLabel =
+        typeof s.distance_km === "number"
+          ? `${s.distance_km.toFixed(1)}km`
+          : s.distance_text || "DIST N/A";
 
-  const hadError = results.some(
-    (r) => r.status === "rejected" || (r.value && r.value.error)
-  );
+      div.innerHTML = `
+        <div class='text-[9px] text-blue-400 font-black uppercase truncate'>${s.name}</div>
+        <div class='text-[11px] text-white font-bold mt-1'>${s.rating || "NOT_RATED"}</div>
+        <div class='text-[9px] text-gray-500 uppercase tracking-tighter'>
+          ${s.category || "SCHOOL"} • ${distanceLabel}
+        </div>
+        <div class='text-[9px] text-gray-600'>
+          Latest report: ${s.latest_report || "N/A"} • URN: ${s.urn || "N/A"}
+        </div>
+      `;
+      container.appendChild(div);
+    });
 
-  if (hadError) {
-    updateStatus("AUDIT_COMPLETE_WITH_WARNINGS", "error");
-    setEpcState("ok", "Modules_Partial");
-  } else {
-    updateStatus("AUDIT_COMPLETE", "success");
-    setEpcState("ok", "All_Modules_Resolved");
+    return data;
+  } catch (e) {
+    container.innerHTML =
+      "<div class='text-red-500 text-[10px] p-2 uppercase'>SCHOOLS_MODULE_EXCEPTION</div>";
+    return { error: "SCHOOLS_MODULE_EXCEPTION", message: e.message };
   }
 }
 
-// --- MODULE: LAND REGISTRY PPI ---
+// ------------------------------------------------------------
+//  LAND REGISTRY PPI MODULE
+// ------------------------------------------------------------
 
 async function loadMarketData(pc) {
   const marketBody = document.getElementById("marketBody");
@@ -172,9 +167,7 @@ async function loadMarketData(pc) {
       "<tr><td colspan='4' class='p-4 text-center animate-pulse'>ACCESSING_LAND_REGISTRY...</td></tr>";
   }
 
-  const url = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(
-    pc
-  )}&_limit=10`;
+  const url = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(pc)}&_limit=10`;
   const data = await safeFetch(url);
 
   if (!marketBody || !valMetric) return data;
@@ -196,12 +189,8 @@ async function loadMarketData(pc) {
           const row = document.createElement("tr");
           row.innerHTML = `
             <td class='p-4 text-gray-500'>${s.latestTransaction.date}</td>
-            <td class='p-4 text-white font-medium'>${s.paon || ""} ${
-            s.street || ""
-          }</td>
-            <td class='p-4 text-[9px] uppercase'>${
-              s.propertyType?.label || "UNIT"
-            }</td>
+            <td class='p-4 text-white font-medium'>${s.paon || ""} ${s.street || ""}</td>
+            <td class='p-4 text-[9px] uppercase'>${s.propertyType?.label || "UNIT"}</td>
             <td class='p-4 text-green-500 font-bold'>£${(
               s.latestTransaction.pricePaid || 0
             ).toLocaleString()}</td>
@@ -221,7 +210,6 @@ async function loadMarketData(pc) {
       valMetric.innerText = "N/A";
     }
   } else {
-    console.warn("PPI module error:", data);
     marketBody.innerHTML =
       "<tr><td colspan='4' class='p-4 text-center text-red-500 text-[10px]'>PPI_MODULE_ERROR</td></tr>";
     valMetric.innerText = "N/A";
@@ -230,51 +218,57 @@ async function loadMarketData(pc) {
   return data;
 }
 
-// --- MODULE: SCHOOLS DATA ---
+// ------------------------------------------------------------
+//  FINAL AUDIT ENGINE
+// ------------------------------------------------------------
 
-async function loadSchoolsData(pc) {
-  const container = document.getElementById("schoolList");
-  if (!container) return;
+async function initiateFinalAudit(epcRaw) {
+  document.getElementById("dashboard").classList.remove("hidden");
+  setEpcState("pending", "EPC_Normalizing");
 
-  container.innerHTML =
-    "<div class='text-[10px] animate-pulse'>POLLING_OFSTED...</div>";
+  const epc = normalizeEpc(epcRaw);
 
-  const url = `https://api.getthedata.com/schools/postcode/${pc}`;
-  const data = await safeFetch(url);
+  document.getElementById("displayAddress").innerText =
+    epc.address.toUpperCase();
+  document.getElementById("displayUprn").innerText = epc.uprn;
+  document.getElementById("epcBadge").innerText = epc.rating;
 
-  container.innerHTML = "";
-
-  if (data && !data.error && Array.isArray(data.data) && data.data.length > 0) {
-    const schools = data.data;
-    schools.slice(0, 3).forEach((s) => {
-      const div = document.createElement("div");
-      div.className = "bg-black p-3 border border-gray-900 rounded shadow-inner";
-      div.innerHTML = `
-        <div class='text-[9px] text-blue-400 font-black uppercase truncate'>${
-          s.school_name
-        }</div>
-        <div class='text-[11px] text-white font-bold mt-1'>${
-          s.ofsted_rating || "NOT_RATED"
-        }</div>
-        <div class='text-[9px] text-gray-600 uppercase tracking-tighter'>${
-          s.school_type || "SCHOOL"
-        } • AGES ${s.age_range || "??"}</div>
-      `;
-      container.appendChild(div);
-    });
-  } else if (data && !data.error) {
-    container.innerHTML =
-      "<div class='text-gray-800 text-[10px] p-2 italic'>DATA_SHIELD_ACTIVE: NO_LOCAL_SCHOOLS</div>";
+  const sqftMetric = document.getElementById("sqftMetric");
+  if (epc.area > 0) {
+    sqftMetric.innerText = `${Math.round(epc.area * 10.764)} SQFT (${epc.area}m²)`;
   } else {
-    console.warn("Schools module error:", data);
-    container.innerHTML =
-      "<div class='text-red-500 text-[10px] p-2 uppercase'>SCHOOLS_MODULE_ERROR</div>";
+    sqftMetric.innerText = "N/A";
   }
 
-  return data;
+  const cleanPc = epc.postcode.replace(/\s+/g, "").toUpperCase();
+  const spacedPc =
+    cleanPc.length > 3
+      ? cleanPc.slice(0, -3) + " " + cleanPc.slice(-3)
+      : cleanPc;
+
+  updateStatus("AUDIT_RUNNING", "loading");
+
+  const results = await Promise.allSettled([
+    loadMarketData(spacedPc),
+    loadSchoolsFromOfsted(cleanPc),
+  ]);
+
+  const hadError = results.some(
+    (r) => r.status === "rejected" || (r.value && r.value.error)
+  );
+
+  if (hadError) {
+    updateStatus("AUDIT_COMPLETE_WITH_WARNINGS", "error");
+    setEpcState("ok", "Modules_Partial");
+  } else {
+    updateStatus("AUDIT_COMPLETE", "success");
+    setEpcState("ok", "All_Modules_Resolved");
+  }
 }
 
-// --- DISCOVERY FLOWS ---
+// ------------------------------------------------------------
+//  DISCOVERY FLOWS
+// ------------------------------------------------------------
 
 async function discoverByPostcode(pc) {
   updateStatus("POSTCODE_LOOKUP", "loading");
@@ -321,8 +315,6 @@ async function discoverByUprn(uprn) {
   await initiateFinalAudit(epc);
 }
 
-// --- INPUT HANDLER ---
-
 async function handleDiscovery() {
   const inputEl = document.getElementById("mainInput");
   const input = (inputEl?.value || "").trim();
@@ -332,19 +324,16 @@ async function handleDiscovery() {
     return;
   }
 
-  // UPRN (all digits, 6–12 chars)
   if (/^\d{6,12}$/.test(input)) {
     return discoverByUprn(input);
   }
 
-  // Postcode (loose UK pattern)
   if (/^[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}$/.test(input)) {
     const cleanPc = input.replace(/\s+/g, "").toUpperCase();
     const spacedPc = cleanPc.slice(0, -3) + " " + cleanPc.slice(-3);
     return discoverByPostcode(spacedPc);
   }
 
-  // Zoopla URL → Worker extracts UPRN
   if (input.includes("zoopla.co.uk")) {
     updateStatus("ZOOPLA_SCRAPE", "loading");
     const data = await safeFetch(input);
@@ -359,8 +348,6 @@ async function handleDiscovery() {
 
   updateStatus("UNRECOGNISED_INPUT", "error");
 }
-
-// --- ADDRESS SELECTOR ---
 
 function selectAddress() {
   const dropdown = document.getElementById("addressDropdown");
