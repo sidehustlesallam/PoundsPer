@@ -1,373 +1,196 @@
 /**
- * £Per Audit Engine v11.17
- * - EPC via Worker proxy
- * - Schools via Ofsted scrape
- * - PPI via Land Registry SPARQL (Worker ?ppi=1&postcode=...)
+ * £Per Audit Engine v11.18
+ * - Optimized for Specialist Worker Modules: PPI (SPARQL) & Schools (Ofsted Scrape)
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
 
-// ------------------------------------------------------------
-//  UI HELPERS
-// ------------------------------------------------------------
-
+// --- UI HELPERS ---
 function updateStatus(msg, type) {
-  const text = document.getElementById("statusText");
-  const dot = document.getElementById("statusDot");
-  if (text) text.innerText = msg.toUpperCase();
+    const text = document.getElementById("statusText");
+    const dot = document.getElementById("statusDot");
+    if (text) text.innerText = msg.toUpperCase();
+    if (!dot) return;
 
-  if (!dot) return;
-
-  let cls = "w-1.5 h-1.5 rounded-full ";
-  if (type === "loading") cls += "bg-blue-500 animate-pulse";
-  else if (type === "error") cls += "bg-red-600";
-  else cls += "bg-green-500 shadow-[0_0_8px_green]";
-
-  dot.className = cls;
+    let cls = "w-1.5 h-1.5 rounded-full ";
+    if (type === "loading") cls += "bg-blue-500 animate-pulse";
+    else if (type === "error") cls += "bg-red-600";
+    else cls += "bg-green-500 shadow-[0_0_8px_green]";
+    dot.className = cls;
 }
 
 function setEpcState(state, meta = "") {
-  const badge = document.getElementById("epcBadge");
-  const metaEl = document.getElementById("epcMeta");
-  if (!badge) return;
+    const badge = document.getElementById("epcBadge");
+    const metaEl = document.getElementById("epcMeta");
+    if (!badge) return;
 
-  badge.classList.remove("epc-error", "epc-pending");
+    badge.classList.remove("bg-red-500", "animate-pulse");
 
-  if (state === "pending") {
-    badge.classList.add("epc-pending");
-    badge.innerText = "?";
-    if (metaEl) metaEl.innerText = meta || "EPC_Query_Active";
-  } else if (state === "error") {
-    badge.classList.add("epc-error");
-    badge.innerText = "!";
-    if (metaEl) metaEl.innerText = meta || "EPC_Failed";
-  } else if (state === "ok") {
-    if (metaEl) metaEl.innerText = meta || "EPC_Resolved";
-  }
+    if (state === "pending") {
+        badge.classList.add("animate-pulse");
+        badge.innerText = "?";
+    } else if (state === "error") {
+        badge.classList.add("bg-red-500");
+        badge.innerText = "!";
+    }
 }
 
-// ------------------------------------------------------------
-//  GENERIC PROXY FETCH (EPC / legacy)
-// ------------------------------------------------------------
-
+// --- GENERIC PROXY FETCH ---
 async function safeFetch(url) {
-  try {
-    const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(url)}`);
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok) return { error: `HTTP_${res.status}`, raw: data };
-    if (data && data.error) return data;
-
-    return data;
-  } catch (e) {
-    return { error: "NETWORK_EXCEPTION", message: e.message };
-  }
+    try {
+        const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(url)}`);
+        const text = await res.text();
+        // Guard against empty/HTML responses crashing JSON.parse
+        if (!text || text.startsWith("<!DOCTYPE")) return { error: "INVALID_RESPONSE" };
+        return JSON.parse(text);
+    } catch (e) {
+        return { error: "NETWORK_EXCEPTION", message: e.message };
+    }
 }
 
-// ------------------------------------------------------------
-//  EPC FETCH
-// ------------------------------------------------------------
-
-async function fetchEpcByPostcode(pc) {
-  const url = `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${encodeURIComponent(pc)}`;
-  return await safeFetch(url);
-}
-
-async function fetchEpcByUprn(uprn) {
-  const url = `https://epc.opendatacommunities.org/api/v1/domestic/search?uprn=${encodeURIComponent(uprn)}`;
-  return await safeFetch(url);
-}
-
+// --- EPC MODULES ---
 function normalizeEpc(epcRaw) {
-  const epc = epcRaw || {};
-  const area = parseFloat(epc["total-floor-area"]) || 0;
-
-  return {
-    address: (epc.address || "").toString(),
-    uprn: epc.uprn || "N/A",
-    postcode: (epc.postcode || "").toString(),
-    area,
-    rating: epc["current-energy-rating"] || "?",
-  };
+    const epc = epcRaw || {};
+    const area = parseFloat(epc["total-floor-area"]) || 0;
+    return {
+        address: (epc.address || "").toString(),
+        uprn: epc.uprn || "N/A",
+        postcode: (epc.postcode || "").toString(),
+        area,
+        rating: epc["current-energy-rating"] || "?",
+    };
 }
 
-// ------------------------------------------------------------
-//  SCHOOLS MODULE — LIVE OFSTED SCRAPE VIA WORKER
-// ------------------------------------------------------------
-
+// --- SCHOOLS MODULE (Specialist Worker Route) ---
 async function loadSchoolsFromOfsted(cleanPostcode) {
-  const container = document.getElementById("schoolList");
-  if (!container) return;
+    const container = document.getElementById("schoolList");
+    if (!container) return;
+    container.innerHTML = "<div class='text-[10px] animate-pulse'>SCRAPING_OFSTED_DATA...</div>";
 
-  container.innerHTML =
-    "<div class='text-[10px] animate-pulse'>RESOLVING_NEAREST_SCHOOLS...</div>";
+    try {
+        const res = await fetch(`${PROXY_URL}?schools=1&postcode=${encodeURIComponent(cleanPostcode)}`);
+        const data = await res.json();
+        container.innerHTML = "";
 
-  try {
-    const res = await fetch(
-      `${PROXY_URL}?schools=1&postcode=${encodeURIComponent(cleanPostcode)}`
-    );
-    const data = await res.json().catch(() => null);
-
-    container.innerHTML = "";
-
-    if (!res.ok || !data || data.error) {
-      container.innerHTML =
-        "<div class='text-red-500 text-[10px] p-2 uppercase'>SCHOOLS_MODULE_ERROR</div>";
-      return data || { error: "SCHOOLS_MODULE_ERROR" };
+        if (data.schools && data.schools.length > 0) {
+            data.schools.slice(0, 3).forEach((s) => {
+                const div = document.createElement("div");
+                div.className = "bg-black p-3 border border-gray-900 rounded mb-2";
+                div.innerHTML = `
+                    <div class='text-[9px] text-blue-400 font-black uppercase'>${s.name}</div>
+                    <div class='text-[11px] text-white font-bold mt-1'>${s.rating || "NOT_RATED"}</div>
+                    <div class='text-[9px] text-gray-500 mt-1'>${s.category} • ${s.distance_text || ''}</div>
+                `;
+                container.appendChild(div);
+            });
+        } else {
+            container.innerHTML = "<div class='text-gray-600 text-[10px]'>NO_LOCAL_SCHOOLS_FOUND</div>";
+        }
+    } catch (e) {
+        container.innerHTML = "<div class='text-red-500 text-[10px]'>SCHOOLS_OFFLINE</div>";
     }
-
-    const schools = Array.isArray(data.schools) ? data.schools : [];
-
-    if (schools.length === 0) {
-      container.innerHTML =
-        "<div class='text-gray-500 text-[10px] p-2 italic'>NO_NEARBY_SCHOOLS_FOUND</div>";
-      return { schools: [] };
-    }
-
-    schools.slice(0, 3).forEach((s) => {
-      const div = document.createElement("div");
-      div.className = "bg-black p-3 border border-gray-900 rounded shadow-inner";
-
-      const distanceLabel =
-        typeof s.distance_km === "number"
-          ? `${s.distance_km.toFixed(1)}km`
-          : s.distance_text || "DIST N/A";
-
-      div.innerHTML = `
-        <div class='text-[9px] text-blue-400 font-black uppercase truncate'>${s.name}</div>
-        <div class='text-[11px] text-white font-bold mt-1'>${s.rating || "NOT_RATED"}</div>
-        <div class='text-[9px] text-gray-500 uppercase tracking-tighter'>
-          ${s.category || "SCHOOL"} • ${distanceLabel}
-        </div>
-        <div class='text-[9px] text-gray-600'>
-          Latest report: ${s.latest_report || "N/A"} • URN: ${s.urn || "N/A"}
-        </div>
-      `;
-      container.appendChild(div);
-    });
-
-    return data;
-  } catch (e) {
-    container.innerHTML =
-      "<div class='text-red-500 text-[10px] p-2 uppercase'>SCHOOLS_MODULE_EXCEPTION</div>";
-    return { error: "SCHOOLS_MODULE_EXCEPTION", message: e.message };
-  }
 }
 
-// ------------------------------------------------------------
-//  LAND REGISTRY PPI MODULE — VIA SPARQL (WORKER ?ppi=1)
-// ------------------------------------------------------------
-
+// --- MARKET DATA (Specialist SPARQL Route) ---
 async function loadMarketData(pc) {
-  const marketBody = document.getElementById("marketBody");
-  const valMetric = document.getElementById("valMetric");
+    const marketBody = document.getElementById("marketBody");
+    const valMetric = document.getElementById("valMetric");
+    if (marketBody) marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center animate-pulse text-[10px]'>QUERYING_SPARQL...</td></tr>";
 
-  if (marketBody) {
-    marketBody.innerHTML =
-      "<tr><td colspan='4' class='p-4 text-center animate-pulse'>ACCESSING_LAND_REGISTRY...</td></tr>";
-  }
+    try {
+        const res = await fetch(`${PROXY_URL}?ppi=1&postcode=${encodeURIComponent(pc)}`);
+        const data = await res.json();
+        if (!marketBody) return;
+        marketBody.innerHTML = "";
 
-  try {
-    const res = await fetch(
-      `${PROXY_URL}?ppi=1&postcode=${encodeURIComponent(pc)}`
-    );
-    const data = await res.json().catch(() => null);
-
-    if (!marketBody || !valMetric) return data;
-
-    marketBody.innerHTML = "";
-
-    if (!res.ok || !data || data.error) {
-      marketBody.innerHTML =
-        "<tr><td colspan='4' class='p-4 text-center text-red-500 text-[10px]'>PPI_MODULE_ERROR</td></tr>";
-      valMetric.innerText = "N/A";
-      return data || { error: "PPI_MODULE_ERROR" };
+        const txs = data.transactions || [];
+        if (txs.length > 0) {
+            txs.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5).forEach((t) => {
+                const row = document.createElement("tr");
+                const addr = `${t.paon || ""} ${t.street || ""}`.trim();
+                row.innerHTML = `
+                    <td class='p-4 text-gray-500 text-[10px]'>${t.date.split('T')[0]}</td>
+                    <td class='p-4 text-white font-medium text-[10px]'>${addr}</td>
+                    <td class='p-4 text-green-500 font-bold text-[10px]'>£${t.amount.toLocaleString()}</td>
+                `;
+                marketBody.appendChild(row);
+            });
+            const avg = txs.reduce((acc, curr) => acc + curr.amount, 0) / txs.length;
+            if (valMetric) valMetric.innerText = `£${Math.round(avg).toLocaleString()}`;
+        } else {
+            marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center text-gray-700 text-[10px]'>NO_PPI_DATA</td></tr>";
+        }
+    } catch (e) {
+        if (marketBody) marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center text-red-500'>PPI_ERROR</td></tr>";
     }
-
-    const txs = Array.isArray(data.transactions) ? data.transactions : [];
-
-    if (txs.length === 0) {
-      marketBody.innerHTML =
-        "<tr><td colspan='4' class='p-4 text-center text-gray-700'>NO_PPI_DATA</td></tr>";
-      valMetric.innerText = "N/A";
-      return { transactions: [] };
-    }
-
-    txs
-      .slice()
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
-      .slice(0, 5)
-      .forEach((t) => {
-        const row = document.createElement("tr");
-        const addr = `${t.paon || ""} ${t.saon || ""} ${t.street || ""}`.trim();
-        row.innerHTML = `
-          <td class='p-4 text-gray-500'>${t.date || ""}</td>
-          <td class='p-4 text-white font-medium'>${addr}</td>
-          <td class='p-4 text-[9px] uppercase'>${t.category || "STANDARD"}</td>
-          <td class='p-4 text-green-500 font-bold'>£${(t.amount || 0).toLocaleString()}</td>
-        `;
-        marketBody.appendChild(row);
-      });
-
-    const avg =
-      txs.reduce((acc, curr) => acc + (curr.amount || 0), 0) /
-      (txs.length || 1);
-    valMetric.innerText = `£${Math.round(avg).toLocaleString()}`;
-
-    return data;
-  } catch (e) {
-    if (marketBody) {
-      marketBody.innerHTML =
-        "<tr><td colspan='4' class='p-4 text-center text-red-500 text-[10px]'>PPI_MODULE_EXCEPTION</td></tr>";
-    }
-    if (valMetric) valMetric.innerText = "N/A";
-    return { error: "PPI_MODULE_EXCEPTION", message: e.message };
-  }
 }
 
-// ------------------------------------------------------------
-//  FINAL AUDIT ENGINE
-// ------------------------------------------------------------
-
+// --- FINAL AUDIT ---
 async function initiateFinalAudit(epcRaw) {
-  document.getElementById("dashboard").classList.remove("hidden");
-  setEpcState("pending", "EPC_Normalizing");
+    document.getElementById("dashboard").classList.remove("hidden");
+    const epc = normalizeEpc(epcRaw);
 
-  const epc = normalizeEpc(epcRaw);
+    document.getElementById("displayAddress").innerText = epc.address.toUpperCase();
+    document.getElementById("displayUprn").innerText = epc.uprn;
+    document.getElementById("epcBadge").innerText = epc.rating;
 
-  document.getElementById("displayAddress").innerText =
-    epc.address.toUpperCase();
-  document.getElementById("displayUprn").innerText = epc.uprn;
-  document.getElementById("epcBadge").innerText = epc.rating;
+    const sqftMetric = document.getElementById("sqftMetric");
+    sqftMetric.innerText = epc.area > 0 ? `${Math.round(epc.area * 10.764)} SQFT (${epc.area}m²)` : "N/A";
 
-  const sqftMetric = document.getElementById("sqftMetric");
-  if (epc.area > 0) {
-    sqftMetric.innerText = `${Math.round(epc.area * 10.764)} SQFT (${epc.area}m²)`;
-  } else {
-    sqftMetric.innerText = "N/A";
-  }
+    const cleanPc = epc.postcode.replace(/\s+/g, "").toUpperCase();
+    updateStatus("AUDIT_ACTIVE", "loading");
 
-  const cleanPc = epc.postcode.replace(/\s+/g, "").toUpperCase();
-  const spacedPc =
-    cleanPc.length > 3
-      ? cleanPc.slice(0, -3) + " " + cleanPc.slice(-3)
-      : cleanPc;
+    await Promise.all([
+        loadMarketData(epc.postcode),
+        loadSchoolsFromOfsted(cleanPc)
+    ]);
 
-  updateStatus("AUDIT_RUNNING", "loading");
-
-  const results = await Promise.allSettled([
-    loadMarketData(spacedPc),
-    loadSchoolsFromOfsted(cleanPc),
-  ]);
-
-  const hadError = results.some(
-    (r) => r.status === "rejected" || (r.value && r.value.error)
-  );
-
-  if (hadError) {
-    updateStatus("AUDIT_COMPLETE_WITH_WARNINGS", "error");
-    setEpcState("ok", "Modules_Partial");
-  } else {
     updateStatus("AUDIT_COMPLETE", "success");
-    setEpcState("ok", "All_Modules_Resolved");
-  }
 }
 
-// ------------------------------------------------------------
-//  DISCOVERY FLOWS
-// ------------------------------------------------------------
+// --- DISCOVERY LOGIC ---
+window.handleDiscovery = async function() {
+    const input = document.getElementById("mainInput").value.trim();
+    if (!input) return updateStatus("INPUT_REQUIRED", "error");
 
-async function discoverByPostcode(pc) {
-  updateStatus("POSTCODE_LOOKUP", "loading");
+    // Clear previous
+    document.getElementById("addressSelectorContainer").classList.add("hidden");
 
-  const data = await fetchEpcByPostcode(pc);
-
-  if (!data || !data.rows || data.rows.length === 0) {
-    updateStatus("NO_EPC_FOR_POSTCODE", "error");
-    return;
-  }
-
-  const addresses = data.rows;
-  const container = document.getElementById("addressSelectorContainer");
-  const dropdown = document.getElementById("addressDropdown");
-
-  dropdown.innerHTML = "";
-  container.classList.remove("hidden");
-
-  addresses.forEach((row, idx) => {
-    const opt = document.createElement("option");
-    opt.value = idx;
-    opt.textContent = row.address;
-    dropdown.appendChild(opt);
-  });
-
-  window.__EPC_ROWS__ = addresses;
-
-  updateStatus("SELECT_ADDRESS", "success");
-}
-
-async function discoverByUprn(uprn) {
-  updateStatus("UPRN_LOOKUP", "loading");
-
-  const data = await fetchEpcByUprn(uprn);
-
-  if (!data || !data.rows || data.rows.length === 0) {
-    updateStatus("NO_EPC_FOR_UPRN", "error");
-    return;
-  }
-
-  const epc = data.rows[0];
-
-  updateStatus("EPC_RESOLVED", "success");
-  await initiateFinalAudit(epc);
-}
-
-async function handleDiscovery() {
-  const inputEl = document.getElementById("mainInput");
-  const input = (inputEl?.value || "").trim();
-
-  if (!input) {
-    updateStatus("INPUT_REQUIRED", "error");
-    return;
-  }
-
-  if (/^\d{6,12}$/.test(input)) {
-    return discoverByUprn(input);
-  }
-
-  if (/^[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}$/.test(input)) {
-    const cleanPc = input.replace(/\s+/g, "").toUpperCase();
-    const spacedPc = cleanPc.slice(0, -3) + " " + cleanPc.slice(-3);
-    return discoverByPostcode(spacedPc);
-  }
-
-  if (input.includes("zoopla.co.uk")) {
-    updateStatus("ZOOPLA_SCRAPE", "loading");
-    const data = await safeFetch(input);
-
-    if (data?.extractedUprn) {
-      return discoverByUprn(data.extractedUprn);
+    if (/^\d{6,12}$/.test(input)) {
+        updateStatus("UPRN_LOOKUP", "loading");
+        const data = await safeFetch(`https://epc.opendatacommunities.org/api/v1/domestic/search?uprn=${input}`);
+        if (data?.rows?.length > 0) initiateFinalAudit(data.rows[0]);
+        else updateStatus("UPRN_NOT_FOUND", "error");
+    } 
+    else if (/[A-Z]{1,2}\d/i.test(input)) {
+        const pcMatch = input.match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i);
+        if (!pcMatch) return updateStatus("INVALID_POSTCODE", "error");
+        
+        updateStatus("POSTCODE_SCAN", "loading");
+        const pc = pcMatch[0].toUpperCase();
+        const data = await safeFetch(`https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${pc.replace(/\s/g,'')}`);
+        
+        if (data?.rows?.length > 0) {
+            window.__EPC_ROWS__ = data.rows;
+            const container = document.getElementById("addressSelectorContainer");
+            const dropdown = document.getElementById("addressDropdown");
+            dropdown.innerHTML = "<option value=''>-- SELECT PROPERTY --</option>";
+            data.rows.forEach((r, i) => {
+                const opt = document.createElement("option");
+                opt.value = i; opt.textContent = r.address;
+                dropdown.appendChild(opt);
+            });
+            container.classList.remove("hidden");
+            updateStatus("CHOOSE_ADDRESS", "success");
+        } else {
+            updateStatus("NO_DATA", "error");
+        }
     }
+};
 
-    updateStatus("NO_UPRN_FOUND", "error");
-    return;
-  }
-
-  updateStatus("UNRECOGNISED_INPUT", "error");
-}
-
-function selectAddress() {
-  const dropdown = document.getElementById("addressDropdown");
-  const idx = dropdown ? dropdown.value : null;
-  const rows = window.__EPC_ROWS__ || [];
-
-  if (idx === null || !rows[idx]) {
-    updateStatus("INVALID_SELECTION", "error");
-    return;
-  }
-
-  const epc = rows[idx];
-  document.getElementById("addressSelectorContainer").classList.add("hidden");
-
-  initiateFinalAudit(epc);
-}
+window.selectAddress = function() {
+    const idx = document.getElementById("addressDropdown").value;
+    if (idx === "" || !window.__EPC_ROWS__) return;
+    document.getElementById("addressSelectorContainer").classList.add("hidden");
+    initiateFinalAudit(window.__EPC_ROWS__[idx]);
+};
