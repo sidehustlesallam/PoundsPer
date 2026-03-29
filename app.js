@@ -1,8 +1,8 @@
 /**
- * £Per Audit Engine v11.13
- * - EPC + PPI unchanged
- * - New Schools Module: Live Ofsted HTML Scrape via Worker
- * - Zero third‑party APIs, zero datasets, zero maintenance
+ * £Per Audit Engine v11.17
+ * - EPC via Worker proxy
+ * - Schools via Ofsted scrape
+ * - PPI via Land Registry SPARQL (Worker ?ppi=1&postcode=...)
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
@@ -47,7 +47,7 @@ function setEpcState(state, meta = "") {
 }
 
 // ------------------------------------------------------------
-//  GENERIC PROXY FETCH (EPC / PPI / Zoopla)
+//  GENERIC PROXY FETCH (EPC / legacy)
 // ------------------------------------------------------------
 
 async function safeFetch(url) {
@@ -155,7 +155,7 @@ async function loadSchoolsFromOfsted(cleanPostcode) {
 }
 
 // ------------------------------------------------------------
-//  LAND REGISTRY PPI MODULE
+//  LAND REGISTRY PPI MODULE — VIA SPARQL (WORKER ?ppi=1)
 // ------------------------------------------------------------
 
 async function loadMarketData(pc) {
@@ -167,55 +167,62 @@ async function loadMarketData(pc) {
       "<tr><td colspan='4' class='p-4 text-center animate-pulse'>ACCESSING_LAND_REGISTRY...</td></tr>";
   }
 
-  const url = `https://landregistry.data.gov.uk/data/ppi/address.json?postcode=${encodeURIComponent(pc)}&_limit=10`;
-  const data = await safeFetch(url);
+  try {
+    const res = await fetch(
+      `${PROXY_URL}?ppi=1&postcode=${encodeURIComponent(pc)}`
+    );
+    const data = await res.json().catch(() => null);
 
-  if (!marketBody || !valMetric) return data;
+    if (!marketBody || !valMetric) return data;
 
-  marketBody.innerHTML = "";
+    marketBody.innerHTML = "";
 
-  if (data && !data.error) {
-    const items = data?.result?.items || [];
-
-    if (items.length > 0) {
-      items
-        .sort(
-          (a, b) =>
-            new Date(b.latestTransaction.date) -
-            new Date(a.latestTransaction.date)
-        )
-        .slice(0, 5)
-        .forEach((s) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td class='p-4 text-gray-500'>${s.latestTransaction.date}</td>
-            <td class='p-4 text-white font-medium'>${s.paon || ""} ${s.street || ""}</td>
-            <td class='p-4 text-[9px] uppercase'>${s.propertyType?.label || "UNIT"}</td>
-            <td class='p-4 text-green-500 font-bold'>£${(
-              s.latestTransaction.pricePaid || 0
-            ).toLocaleString()}</td>
-          `;
-          marketBody.appendChild(row);
-        });
-
-      const avg =
-        items.reduce(
-          (acc, curr) => acc + (curr.latestTransaction.pricePaid || 0),
-          0
-        ) / items.length;
-      valMetric.innerText = `£${Math.round(avg).toLocaleString()}`;
-    } else {
+    if (!res.ok || !data || data.error) {
       marketBody.innerHTML =
-        "<tr><td colspan='4' class='p-4 text-center text-gray-700'>NO_RECENT_PPI_DATA</td></tr>";
+        "<tr><td colspan='4' class='p-4 text-center text-red-500 text-[10px]'>PPI_MODULE_ERROR</td></tr>";
       valMetric.innerText = "N/A";
+      return data || { error: "PPI_MODULE_ERROR" };
     }
-  } else {
-    marketBody.innerHTML =
-      "<tr><td colspan='4' class='p-4 text-center text-red-500 text-[10px]'>PPI_MODULE_ERROR</td></tr>";
-    valMetric.innerText = "N/A";
-  }
 
-  return data;
+    const txs = Array.isArray(data.transactions) ? data.transactions : [];
+
+    if (txs.length === 0) {
+      marketBody.innerHTML =
+        "<tr><td colspan='4' class='p-4 text-center text-gray-700'>NO_PPI_DATA</td></tr>";
+      valMetric.innerText = "N/A";
+      return { transactions: [] };
+    }
+
+    txs
+      .slice()
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 5)
+      .forEach((t) => {
+        const row = document.createElement("tr");
+        const addr = `${t.paon || ""} ${t.saon || ""} ${t.street || ""}`.trim();
+        row.innerHTML = `
+          <td class='p-4 text-gray-500'>${t.date || ""}</td>
+          <td class='p-4 text-white font-medium'>${addr}</td>
+          <td class='p-4 text-[9px] uppercase'>${t.category || "STANDARD"}</td>
+          <td class='p-4 text-green-500 font-bold'>£${(t.amount || 0).toLocaleString()}</td>
+        `;
+        marketBody.appendChild(row);
+      });
+
+    const avg =
+      txs.reduce((acc, curr) => acc + (curr.amount || 0), 0) /
+      (txs.length || 1);
+    valMetric.innerText = `£${Math.round(avg).toLocaleString()}`;
+
+    return data;
+  } catch (e) {
+    if (marketBody) {
+      marketBody.innerHTML =
+        "<tr><td colspan='4' class='p-4 text-center text-red-500 text-[10px]'>PPI_MODULE_EXCEPTION</td></tr>";
+    }
+    if (valMetric) valMetric.innerText = "N/A";
+    return { error: "PPI_MODULE_EXCEPTION", message: e.message };
+  }
 }
 
 // ------------------------------------------------------------
