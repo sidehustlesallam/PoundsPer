@@ -1,17 +1,178 @@
+/**
+ * £Per Audit Engine v11.18
+ * - Optimized for Specialist Worker Modules: PPI (SPARQL) & Schools (Ofsted Scrape)
+ */
+
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
 
+// --- UI HELPERS ---
+function updateStatus(msg, type) {
+    const text = document.getElementById("statusText");
+    const dot = document.getElementById("statusDot");
+    if (text) text.innerText = msg.toUpperCase();
+    if (!dot) return;
+
+    let cls = "w-1.5 h-1.5 rounded-full ";
+    if (type === "loading") cls += "bg-blue-500 animate-pulse";
+    else if (type === "error") cls += "bg-red-600";
+    else cls += "bg-green-500 shadow-[0_0_8px_green]";
+    dot.className = cls;
+}
+
+function setEpcState(state, meta = "") {
+    const badge = document.getElementById("epcBadge");
+    const metaEl = document.getElementById("epcMeta");
+    if (!badge) return;
+
+    badge.classList.remove("bg-red-500", "animate-pulse");
+
+    if (state === "pending") {
+        badge.classList.add("animate-pulse");
+        badge.innerText = "?";
+    } else if (state === "error") {
+        badge.classList.add("bg-red-500");
+        badge.innerText = "!";
+    }
+}
+
+// --- GENERIC PROXY FETCH ---
+async function safeFetch(url) {
+    try {
+        const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(url)}`);
+        const text = await res.text();
+        // Guard against empty/HTML responses crashing JSON.parse
+        if (!text || text.startsWith("<!DOCTYPE")) return { error: "INVALID_RESPONSE" };
+        return JSON.parse(text);
+    } catch (e) {
+        return { error: "NETWORK_EXCEPTION", message: e.message };
+    }
+}
+
+// --- EPC MODULES ---
+function normalizeEpc(epcRaw) {
+    const epc = epcRaw || {};
+    const area = parseFloat(epc["total-floor-area"]) || 0;
+    return {
+        address: (epc.address || "").toString(),
+        uprn: epc.uprn || "N/A",
+        postcode: (epc.postcode || "").toString(),
+        area,
+        rating: epc["current-energy-rating"] || "?",
+    };
+}
+
+// --- SCHOOLS MODULE (Specialist Worker Route) ---
+async function loadSchoolsFromOfsted(cleanPostcode) {
+    const container = document.getElementById("schoolList");
+    if (!container) return;
+    container.innerHTML = "<div class='text-[10px] animate-pulse'>SCRAPING_OFSTED_DATA...</div>";
+
+    try {
+        const res = await fetch(`${PROXY_URL}?schools=1&postcode=${encodeURIComponent(cleanPostcode)}`);
+        const data = await res.json();
+        container.innerHTML = "";
+
+        if (data.schools && data.schools.length > 0) {
+            data.schools.slice(0, 3).forEach((s) => {
+                const div = document.createElement("div");
+                div.className = "bg-black p-3 border border-gray-900 rounded mb-2";
+                div.innerHTML = `
+                    <div class='text-[9px] text-blue-400 font-black uppercase'>${s.name}</div>
+                    <div class='text-[11px] text-white font-bold mt-1'>${s.rating || "NOT_RATED"}</div>
+                    <div class='text-[9px] text-gray-500 mt-1'>${s.category} • ${s.distance_text || ''}</div>
+                `;
+                container.appendChild(div);
+            });
+        } else {
+            container.innerHTML = "<div class='text-gray-600 text-[10px]'>NO_LOCAL_SCHOOLS_FOUND</div>";
+        }
+    } catch (e) {
+        container.innerHTML = "<div class='text-red-500 text-[10px]'>SCHOOLS_OFFLINE</div>";
+    }
+}
+
+// --- MARKET DATA (Specialist SPARQL Route) ---
+async function loadMarketData(pc) {
+    const marketBody = document.getElementById("marketBody");
+    const valMetric = document.getElementById("valMetric");
+    if (marketBody) marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center animate-pulse text-[10px]'>QUERYING_SPARQL...</td></tr>";
+
+    try {
+        const res = await fetch(`${PROXY_URL}?ppi=1&postcode=${encodeURIComponent(pc)}`);
+        const data = await res.json();
+        if (!marketBody) return;
+        marketBody.innerHTML = "";
+
+        const txs = data.transactions || [];
+        if (txs.length > 0) {
+            txs.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5).forEach((t) => {
+                const row = document.createElement("tr");
+                const addr = `${t.paon || ""} ${t.street || ""}`.trim();
+                row.innerHTML = `
+                    <td class='p-4 text-gray-500 text-[10px]'>${t.date.split('T')[0]}</td>
+                    <td class='p-4 text-white font-medium text-[10px]'>${addr}</td>
+                    <td class='p-4 text-green-500 font-bold text-[10px]'>£${t.amount.toLocaleString()}</td>
+                `;
+                marketBody.appendChild(row);
+            });
+            const avg = txs.reduce((acc, curr) => acc + curr.amount, 0) / txs.length;
+            if (valMetric) valMetric.innerText = `£${Math.round(avg).toLocaleString()}`;
+        } else {
+            marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center text-gray-700 text-[10px]'>NO_PPI_DATA</td></tr>";
+        }
+    } catch (e) {
+        if (marketBody) marketBody.innerHTML = "<tr><td colspan='4' class='p-4 text-center text-red-500'>PPI_ERROR</td></tr>";
+    }
+}
+
+// --- FINAL AUDIT ---
+async function initiateFinalAudit(epcRaw) {
+    document.getElementById("dashboard").classList.remove("hidden");
+    const epc = normalizeEpc(epcRaw);
+
+    document.getElementById("displayAddress").innerText = epc.address.toUpperCase();
+    document.getElementById("displayUprn").innerText = epc.uprn;
+    document.getElementById("epcBadge").innerText = epc.rating;
+
+    const sqftMetric = document.getElementById("sqftMetric");
+    sqftMetric.innerText = epc.area > 0 ? `${Math.round(epc.area * 10.764)} SQFT (${epc.area}m²)` : "N/A";
+
+    const cleanPc = epc.postcode.replace(/\s+/g, "").toUpperCase();
+    updateStatus("AUDIT_ACTIVE", "loading");
+
+    await Promise.all([
+        loadMarketData(epc.postcode),
+        loadSchoolsFromOfsted(cleanPc)
+    ]);
+
+    updateStatus("AUDIT_COMPLETE", "success");
+}
+
+// --- DISCOVERY LOGIC ---
 window.handleDiscovery = async function() {
     const input = document.getElementById("mainInput").value.trim();
-    if (!input) return;
-    document.getElementById("addressSelectorContainer").classList.add("hidden");
-    updateStatus("SCANNING_ASSET", "loading");
+    if (!input) return updateStatus("INPUT_REQUIRED", "error");
 
-    const pcMatch = input.match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i);
-    if (pcMatch) {
+    // Clear previous
+    document.getElementById("addressSelectorContainer").classList.add("hidden");
+
+    if (/^\d{6,12}$/.test(input)) {
+        updateStatus("UPRN_LOOKUP", "loading");
+        const data = await safeFetch(`https://epc.opendatacommunities.org/api/v1/domestic/search?uprn=${input}`);
+        if (data?.rows?.length > 0) initiateFinalAudit(data.rows[0]);
+        else updateStatus("UPRN_NOT_FOUND", "error");
+    } 
+    else if (/[A-Z]{1,2}\d/i.test(input)) {
+        const pcMatch = input.match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i);
+        if (!pcMatch) return updateStatus("INVALID_POSTCODE", "error");
+        
+        updateStatus("POSTCODE_SCAN", "loading");
         const pc = pcMatch[0].toUpperCase();
         const data = await safeFetch(`https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${pc.replace(/\s/g,'')}`);
+        
         if (data?.rows?.length > 0) {
             window.__EPC_ROWS__ = data.rows;
+            const container = document.getElementById("addressSelectorContainer");
             const dropdown = document.getElementById("addressDropdown");
             dropdown.innerHTML = "<option value=''>-- SELECT PROPERTY --</option>";
             data.rows.forEach((r, i) => {
@@ -19,81 +180,17 @@ window.handleDiscovery = async function() {
                 opt.value = i; opt.textContent = r.address;
                 dropdown.appendChild(opt);
             });
-            document.getElementById("addressSelectorContainer").classList.remove("hidden");
+            container.classList.remove("hidden");
+            updateStatus("CHOOSE_ADDRESS", "success");
+        } else {
+            updateStatus("NO_DATA", "error");
         }
     }
 };
 
 window.selectAddress = function() {
     const idx = document.getElementById("addressDropdown").value;
-    if (idx !== "") initiateFinalAudit(window.__EPC_ROWS__[idx]);
+    if (idx === "" || !window.__EPC_ROWS__) return;
+    document.getElementById("addressSelectorContainer").classList.add("hidden");
+    initiateFinalAudit(window.__EPC_ROWS__[idx]);
 };
-
-async function initiateFinalAudit(epc) {
-    document.getElementById("dashboard").classList.remove("hidden");
-    const m2 = parseFloat(epc["total-floor-area"]) || 0;
-    const sqftStr = m2 > 0 ? `${Math.round(m2 * 10.764)} SQFT` : "N/A";
-
-    document.getElementById("displayAddress").innerText = epc.address.toUpperCase();
-    document.getElementById("displayUprn").innerText = epc.uprn;
-    document.getElementById("epcBadge").innerText = epc["current-energy-rating"] || "?";
-    document.getElementById("sqftMetric").innerText = sqftStr;
-
-    updateStatus("AUDIT_COMPLETE", "success");
-    loadMarketData(epc.postcode, sqftStr, epc.address);
-    loadSchools(epc.postcode.replace(/\s/g,''));
-}
-
-async function loadMarketData(pc, sqftLabel, currentAddr) {
-    const body = document.getElementById("marketBody");
-    body.innerHTML = "<tr><td colspan='4' class='p-8 text-center animate-pulse'>LOADING_10_PROPERTY_HISTORY...</td></tr>";
-
-    const res = await fetch(`${PROXY_URL}?ppi=1&postcode=${encodeURIComponent(pc)}`);
-    const data = await res.json();
-    body.innerHTML = "";
-
-    (data.transactions || []).forEach(t => {
-        const row = document.createElement("tr");
-        const fullAddr = `${t.paon} ${t.street}`.toUpperCase();
-        // Check if this sale row matches the property we are auditing
-        const isTarget = currentAddr.toUpperCase().includes(t.paon.toUpperCase());
-        
-        row.className = "border-b border-gray-900/50 hover:bg-white/5 transition-all";
-        row.innerHTML = `
-            <td class='p-4 text-gray-500'>${t.date.split('T')[0]}</td>
-            <td class='p-4 text-white'>${fullAddr}</td>
-            <td class='p-4 text-center'>${isTarget ? `<span class='text-blue-500 font-bold'>${sqftLabel}</span>` : `<span class='text-gray-700 text-[9px]'>MATCH_REQUIRED</span>`}</td>
-            <td class='p-4 text-right text-green-500 font-bold'>£${t.amount.toLocaleString()}</td>
-        `;
-        body.appendChild(row);
-    });
-}
-
-async function loadSchools(pc) {
-    const container = document.getElementById("schoolList");
-    container.innerHTML = "<div class='p-2 animate-pulse'>FETCHING_OFSTED...</div>";
-    const res = await fetch(`${PROXY_URL}?schools=1&postcode=${pc}`);
-    const data = await res.json();
-    container.innerHTML = "";
-
-    (data.schools || []).slice(0, 3).forEach(s => {
-        const div = document.createElement("div");
-        div.className = "bg-black p-4 border border-gray-900 rounded";
-        // Color coding for ratings
-        const color = s.rating.includes("Outstanding") ? "text-green-400" : s.rating.includes("Good") ? "text-yellow-400" : "text-white";
-        div.innerHTML = `<div class='text-[9px] text-blue-500 font-black'>${s.name}</div>
-                         <div class='${color} text-[11px] font-bold mt-1'>${s.rating}</div>
-                         <div class='text-gray-500 text-[9px] mt-1 uppercase'>${s.category} • ${s.distance_text}</div>`;
-        container.appendChild(div);
-    });
-}
-
-async function safeFetch(url) {
-    const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(url)}`);
-    return await res.json();
-}
-
-function updateStatus(msg, type) {
-    document.getElementById("statusText").innerText = msg.toUpperCase();
-    document.getElementById("statusDot").className = `w-1.5 h-1.5 rounded-full ${type === 'loading' ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`;
-}
