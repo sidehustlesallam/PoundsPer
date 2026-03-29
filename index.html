@@ -1,253 +1,149 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>£PER | Property Audit Engine v11.18</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    @import url("https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;900&display=swap");
-    :root {
-      --bg: #05070a;
-      --panel: #0c0e12;
-      --border: #1a1e26;
-      --text: #a1a7b3;
-    }
-    body {
-      font-family: "Inter", sans-serif;
-      background-color: var(--bg);
-      color: var(--text);
-      margin: 0;
-      overflow-x: hidden;
-    }
-    .data-mono {
-      font-family: "Roboto Mono", monospace;
-    }
-    .audit-panel {
-      background-color: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-    }
-    .audit-header {
-      text-transform: uppercase;
-      font-size: 10px;
-      font-weight: 900;
-      letter-spacing: 0.1em;
-      color: #4b5563;
-      padding-bottom: 0.5rem;
-      border-bottom: 1px solid var(--border);
-    }
-    input {
-      background-color: #000;
-      border: 1px solid #2d3748;
-      color: #fff;
-      font-family: "Roboto Mono", monospace;
-    }
-    select {
-      background-color: #000;
-      color: #fff;
-      border: 1px solid #2d3748;
-    }
-    .indicator-green {
-      color: #22c55e;
-      text-shadow: 0 0 8px rgba(34, 197, 94, 0.2);
-    }
-    .indicator-red {
-      color: #ef4444;
-    }
-    .epc-error {
-      background-color: #ef4444 !important;
-      color: #fff !important;
-    }
-    .epc-pending {
-      background-color: #000;
-      color: #fbbf24;
-    }
-    .animate-pulse-slow {
-      animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
-    @keyframes pulse {
-      0%,
-      100% {
-        opacity: 1;
-      }
-      50% {
-        opacity: 0.5;
-      }
-    }
-  </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>£PER | Property Audit Engine v11.18</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="app.js" defer></script>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;900&display=swap");
+        :root {
+            --bg: #05070a;
+            --panel: #0c0e12;
+            --border: #1a1e26;
+            --text: #a1a7b3;
+        }
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            overflow-x: hidden;
+        }
+        .data-mono { font-family: "Roboto Mono", monospace; }
+        .audit-panel {
+            background-color: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+        }
+        .audit-header {
+            text-transform: uppercase;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            color: #4b5563;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        input, select {
+            background-color: #000;
+            border: 1px solid #2d3748;
+            color: #fff;
+            font-family: "Roboto Mono", monospace;
+        }
+        .indicator-green { color: #22c55e; text-shadow: 0 0 8px rgba(34, 197, 94, 0.2); }
+        .indicator-red { color: #ef4444; }
+        .epc-error { background-color: #ef4444 !important; color: #fff !important; }
+        .epc-pending { background-color: #000; color: #fbbf24; }
+    </style>
 </head>
 <body class="min-h-screen">
-  <nav
-    class="p-4 border-b border-gray-900 flex justify-between items-center bg-black sticky top-0 z-50"
-  >
-    <div class="flex items-baseline gap-1">
-      <span class="text-xl font-black text-white italic tracking-tighter"
-        >£PER</span
-      >
-      <span class="data-mono text-[9px] text-gray-600">v11.18</span>
-    </div>
-    <div class="flex items-center gap-3 data-mono text-[10px]">
-      <span id="statusText" class="text-gray-400 uppercase">System_Ready</span>
-      <div
-        id="statusDot"
-        class="w-1.5 h-1.5 bg-gray-700 rounded-full transition-all duration-500"
-      ></div>
-    </div>
-  </nav>
+    <nav class="p-4 border-b border-gray-900 flex justify-between items-center bg-black sticky top-0 z-50">
+        <div class="flex items-baseline gap-1">
+            <span class="text-xl font-black text-white italic tracking-tighter">£PER</span>
+            <span class="data-mono text-[9px] text-gray-600">v11.18_STABLE</span>
+        </div>
+        <div class="flex items-center gap-3 data-mono text-[10px]">
+            <span id="statusText" class="text-gray-400 uppercase">System_Ready</span>
+            <div id="statusDot" class="w-1.5 h-1.5 bg-gray-700 rounded-full transition-all duration-500"></div>
+        </div>
+    </nav>
 
-  <main class="max-w-7xl mx-auto p-6 space-y-8">
-    <section class="max-w-4xl mx-auto py-12 text-center">
-      <h1
-        class="text-[10px] uppercase font-black text-gray-600 tracking-widest mb-4"
-      >
-        Forensic Asset Discovery
-      </h1>
-      <div class="flex flex-col md:flex-row gap-2">
-        <input
-          type="text"
-          id="mainInput"
-          placeholder="PASTE ZOOPLA URL, UPRN, OR POSTCODE"
-          class="flex-grow px-5 py-4 text-sm rounded-sm outline-none focus:border-blue-500 transition-colors"
-        />
-        <button
-          onclick="handleDiscovery()"
-          class="bg-white hover:bg-blue-50 text-black px-10 py-4 rounded-sm text-xs font-black uppercase transition-all active:scale-95"
-        >
-          EXECUTE_SCAN
-        </button>
-      </div>
-
-      <div
-        id="addressSelectorContainer"
-        class="hidden mt-4 p-2 border border-blue-900/30 bg-blue-950/5 rounded"
-      >
-        <select
-          id="addressDropdown"
-          onchange="selectAddress()"
-          class="w-full p-3 text-xs focus:outline-none rounded-sm cursor-pointer"
-        ></select>
-      </div>
-    </section>
-
-    <section id="dashboard" class="hidden space-y-6">
-      <div
-        class="audit-panel p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
-      >
-        <div class="space-y-2">
-          <div class="audit-header">Registered Asset Location</div>
-          <h2
-            id="displayAddress"
-            class="text-3xl font-black text-white tracking-tight leading-none"
-          >
-            --
-          </h2>
-          <div
-            class="flex flex-wrap gap-6 pt-2 data-mono text-[11px]"
-          >
-            <div>
-              <span class="text-gray-600">UPRN:</span>
-              <span
-                id="displayUprn"
-                class="text-blue-500 font-bold tracking-widest"
-                >--</span
-              >
+    <main class="max-w-7xl mx-auto p-6 space-y-8">
+        <section class="max-w-4xl mx-auto py-12 text-center">
+            <h1 class="text-[10px] uppercase font-black text-gray-600 tracking-widest mb-4">Forensic Asset Discovery</h1>
+            <div class="flex flex-col md:flex-row gap-2">
+                <input type="text" id="mainInput" placeholder="PASTE ZOOPLA URL, UPRN, OR POSTCODE" 
+                       class="flex-grow px-5 py-4 text-sm rounded-sm outline-none focus:border-blue-500 transition-colors" />
+                <button onclick="handleDiscovery()" 
+                        class="bg-white hover:bg-blue-50 text-black px-10 py-4 rounded-sm text-xs font-black uppercase transition-all active:scale-95">
+                    EXECUTE_SCAN
+                </button>
             </div>
-            <div>
-              <span class="text-gray-600">INTERNAL_AREA:</span>
-              <span id="sqftMetric" class="text-white font-bold">--</span>
-            </div>
-          </div>
-        </div>
-        <div
-          class="flex flex-col items-center justify-center border-l border-gray-900 pl-0 md:pl-10"
-        >
-          <div class="audit-header mb-3 w-full text-center">EPC_CERT</div>
-          <div
-            id="epcBadge"
-            class="data-mono text-5xl font-black px-10 py-6 bg-white text-black rounded-sm shadow-xl shadow-white/5 italic"
-          >
-            ?
-          </div>
-          <div
-            id="epcMeta"
-            class="data-mono text-[10px] text-gray-500 mt-2 uppercase"
-          >
-            Awaiting_EPC
-          </div>
-        </div>
-      </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="audit-panel p-6">
-          <div class="audit-header mb-4">Environmental Risk</div>
-          <div class="space-y-4 data-mono text-[11px]">
-            <div
-              class="flex justify-between items-center py-2 border-b border-gray-900/50"
-            >
-              <span class="text-gray-500">FLOOD_DATA:</span>
-              <span id="floodStatus" class="font-bold">--</span>
+            <div id="addressSelectorContainer" class="hidden mt-4 p-2 border border-blue-900/30 bg-blue-950/5 rounded">
+                <select id="addressDropdown" onchange="selectAddress()" 
+                        class="w-full p-3 text-xs focus:outline-none rounded-sm cursor-pointer">
+                    <option value="">-- RESOLVING MULTIPLE ADDRESSES --</option>
+                </select>
             </div>
-            <div class="flex justify-between items-center py-2">
-              <span class="text-gray-500">RADON_RISK:</span>
-              <span
-                id="radonStatus"
-                class="indicator-green font-bold uppercase"
-                >Stable</span
-              >
+        </section>
+
+        <section id="dashboard" class="hidden space-y-6">
+            <div class="audit-panel p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div class="space-y-2">
+                    <div class="audit-header">Registered Asset Location</div>
+                    <h2 id="displayAddress" class="text-3xl font-black text-white tracking-tight leading-none uppercase">--</h2>
+                    <div class="flex flex-wrap gap-6 pt-2 data-mono text-[11px]">
+                        <div><span class="text-gray-600">UPRN:</span> <span id="displayUprn" class="text-blue-500 font-bold tracking-widest">--</span></div>
+                        <div><span class="text-gray-600">INTERNAL_AREA:</span> <span id="sqftMetric" class="text-white font-bold">--</span></div>
+                    </div>
+                </div>
+                <div class="flex flex-col items-center justify-center border-l border-gray-900 pl-0 md:pl-10">
+                    <div class="audit-header mb-3 w-full text-center">EPC_CERT</div>
+                    <div id="epcBadge" class="data-mono text-5xl font-black px-10 py-6 bg-white text-black rounded-sm shadow-xl shadow-white/5 italic">?</div>
+                    <div id="epcMeta" class="data-mono text-[10px] text-gray-500 mt-2 uppercase tracking-tighter">Awaiting_Data</div>
+                </div>
             </div>
-          </div>
-        </div>
 
-        <div class="audit-panel p-6 col-span-1 md:col-span-2">
-          <div class="audit-header mb-4">Local Education Infrastructure</div>
-          <div
-            id="schoolList"
-            class="grid grid-cols-1 md:grid-cols-3 gap-4"
-          >
-            <div class="text-gray-800 text-[10px] uppercase p-2">
-              Pending_Discovery...
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="audit-panel p-6">
+                    <div class="audit-header mb-4">Environmental Risk</div>
+                    <div class="space-y-4 data-mono text-[11px]">
+                        <div class="flex justify-between items-center py-2 border-b border-gray-900/50">
+                            <span class="text-gray-500">FLOOD_DATA:</span>
+                            <span id="floodStatus" class="font-bold indicator-green">Low_Risk</span>
+                        </div>
+                        <div class="flex justify-between items-center py-2">
+                            <span class="text-gray-500">RADON_RISK:</span>
+                            <span id="radonStatus" class="indicator-green font-bold uppercase">Stable</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="audit-panel p-6 col-span-1 md:col-span-2">
+                    <div class="audit-header mb-4">Local Education Infrastructure (Ofsted Scrape)</div>
+                    <div id="schoolList" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="text-gray-800 text-[10px] uppercase p-2 animate-pulse">Pending_Discovery...</div>
+                    </div>
+                </div>
             </div>
-          </div>
-        </div>
-      </div>
 
-      <div class="audit-panel overflow-hidden">
-        <div
-          class="p-5 bg-gray-900/20 border-b border-gray-900 flex justify-between items-center"
-        >
-          <div class="audit-header border-none p-0">
-            Land Registry PPI (Recent Sales)
-          </div>
-          <div class="data-mono text-[10px] text-gray-500">
-            MARKET_AVG:
-            <span
-              id="valMetric"
-              class="text-green-500 font-bold tracking-tighter uppercase"
-              >N/A</span
-            >
-          </div>
-        </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left data-mono text-[11px]">
-            <thead class="bg-black/40 text-gray-500">
-              <tr>
-                <th class="p-4 font-bold">TRANSFER_DATE</th>
-                <th class="p-4 font-bold">STREET_ADDRESS</th>
-                <th class="p-4 font-bold">ASSET_TYPE</th>
-                <th class="p-4 font-bold">CONSIDERATION</th>
-              </tr>
-            </thead>
-            <tbody
-              id="marketBody"
-              class="divide-y divide-gray-900 text-gray-300"
-            ></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <script src="app.js"></script>
+            <div class="audit-panel overflow-hidden">
+                <div class="p-5 bg-gray-900/20 border-b border-gray-900 flex justify-between items-center">
+                    <div class="audit-header border-none p-0 text-white">Land Registry PPI (Recent Sales)</div>
+                    <div class="data-mono text-[10px] text-gray-500">
+                        MARKET_AVG: <span id="valMetric" class="text-green-500 font-bold tracking-tighter uppercase">--</span>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left data-mono text-[11px]">
+                        <thead class="bg-black/40 text-gray-500">
+                            <tr>
+                                <th class="p-4 font-bold">TRANSFER_DATE</th>
+                                <th class="p-4 font-bold">STREET_ADDRESS</th>
+                                <th class="p-4 font-bold">TYPE</th>
+                                <th class="p-4 font-bold">CONSIDERATION</th>
+                            </tr>
+                        </thead>
+                        <tbody id="marketBody" class="divide-y divide-gray-900 text-gray-300">
+                            <tr><td colspan="4" class="p-10 text-center text-gray-800 uppercase italic">Awaiting_SPARQL_Results...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
 </body>
 </html>
