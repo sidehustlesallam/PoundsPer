@@ -1,27 +1,29 @@
+// app.js
 /**
- * £Per Audit Engine v12.1
- * - Specialist Worker Modules: PPI, Schools, Flood, Radon, HPI
- * - MapLibre spatial layer (single EPC marker)
- * - EPC detail fetch (lat/lon + local authority)
- * - PPI enriched with EPC area + HPI-adjusted valuations
+ * £Per Audit Engine v13.1
+ * - EPC detail (lat/lon + LA)
+ * - PPI (5 most recent) enriched with EPC area via postcode-only + PAON match
+ * - AREA_AVG + HPI tables
+ * - Single MapLibre marker
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
 
-// --- GLOBAL STATE ---
+// STATE
 window.__PER_STATE__ = {
   epc: null,
   epcDetail: null,
-  schools: [],
   ppi: [],
-  ppiEnriched: [], // with area + HPI
+  ppiEnriched: [],
+  schools: [],
   flood: null,
   radon: null,
   map: null,
   mapMarker: null,
+  epcRowsByPostcode: {},
 };
 
-// --- UI HELPERS ---
+// UI
 function updateStatus(msg, type) {
   const text = document.getElementById("statusText");
   const dot = document.getElementById("statusDot");
@@ -55,7 +57,7 @@ function setEpcState(state, meta = "") {
   }
 }
 
-// --- GENERIC PROXY FETCH FOR EPC ---
+// EPC proxy fetch
 async function safeFetch(url) {
   try {
     const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(url)}`);
@@ -67,7 +69,7 @@ async function safeFetch(url) {
   }
 }
 
-// --- EPC MODULES ---
+// EPC normalisation
 function normalizeEpc(epcRaw) {
   const epc = epcRaw || {};
   const area = parseFloat(epc["total-floor-area"]) || 0;
@@ -86,7 +88,7 @@ function normalizeEpc(epcRaw) {
   };
 }
 
-// --- SCHOOLS MODULE (Worker Route) ---
+// SCHOOLS
 async function loadSchoolsFromOfsted(cleanPostcode) {
   const container = document.getElementById("schoolList");
   if (!container) return;
@@ -124,133 +126,7 @@ async function loadSchoolsFromOfsted(cleanPostcode) {
   }
 }
 
-// --- MARKET DATA (Worker SPARQL Route) + EPC AREA + HPI ---
-async function loadMarketData(pc) {
-  const marketBody = document.getElementById("marketBody");
-  const valMetric = document.getElementById("valMetric");
-  const areaMetric = document.getElementById("areaMetric");
-  if (marketBody)
-    marketBody.innerHTML =
-      "<tr><td colspan='4' class='p-4 text-center animate-pulse text-[10px] text-sky-400'>QUERYING_SPARQL...</td></tr>";
-
-  try {
-    const res = await fetch(
-      `${PROXY_URL}?ppi=1&postcode=${encodeURIComponent(pc)}`
-    );
-    const data = await res.json();
-    if (!marketBody) return;
-    marketBody.innerHTML = "";
-
-    const txs = (data.transactions || []).slice(0, 5);
-    window.__PER_STATE__.ppi = txs;
-
-    if (txs.length === 0) {
-      marketBody.innerHTML =
-        "<tr><td colspan='4' class='p-4 text-center text-gray-700 text-[10px]'>NO_PPI_DATA</td></tr>";
-      if (valMetric) valMetric.innerText = "--";
-      if (areaMetric) areaMetric.innerText = "--";
-      return;
-    }
-
-    const state = window.__PER_STATE__;
-    const laName = state.epcDetail?.["local-authority-label"] || null;
-    const mainPostcode = state.epc?.postcode || pc;
-
-    let totalPrice = 0;
-    let totalPpSqft = 0;
-    let countWithArea = 0;
-
-    const enriched = [];
-
-    for (const t of txs) {
-      const addrCore = `${t.paon || ""} ${t.street || ""}`.trim();
-      const fullAddr = addrCore ? `${addrCore}, ${mainPostcode}` : mainPostcode;
-
-      let areaSqm = null;
-      let areaSqft = null;
-
-      try {
-        const epcSearch = await safeFetch(
-          `https://epc.opendatacommunities.org/api/v1/domestic/search?address=${encodeURIComponent(
-            fullAddr
-          )}`
-        );
-        const row = epcSearch?.rows?.[0];
-        if (row && row["total-floor-area"]) {
-          areaSqm = parseFloat(row["total-floor-area"]);
-          if (!isNaN(areaSqm) && areaSqm > 0) {
-            areaSqft = areaSqm * 10.764;
-          }
-        }
-      } catch {
-        // ignore EPC area failure
-      }
-
-      const dateStr = t.date.split("T")[0];
-      const rowEl = document.createElement("tr");
-      const areaLabel =
-        areaSqm && areaSqft
-          ? `${Math.round(areaSqft).toLocaleString()} sqft (${areaSqm} m²)`
-          : "N/A";
-
-      rowEl.innerHTML = `
-        <td class='p-4 text-gray-500 text-[10px]'>${dateStr}</td>
-        <td class='p-4 text-white font-medium text-[10px]'>${addrCore}</td>
-        <td class='p-4 text-green-500 font-bold text-[10px]'>£${t.amount.toLocaleString()}</td>
-        <td class='p-4 text-sky-400 font-medium text-[10px]'>${areaLabel}</td>
-      `;
-      marketBody.appendChild(rowEl);
-
-      totalPrice += t.amount;
-
-      let ppSqft = null;
-      if (areaSqft && areaSqft > 0) {
-        ppSqft = t.amount / areaSqft;
-        totalPpSqft += ppSqft;
-        countWithArea += 1;
-      }
-
-      enriched.push({
-        ...t,
-        addrCore,
-        fullAddr,
-        areaSqm,
-        areaSqft,
-        pricePerSqft: ppSqft,
-      });
-    }
-
-    window.__PER_STATE__.ppiEnriched = enriched;
-
-    const avgPrice = totalPrice / txs.length;
-    if (valMetric) valMetric.innerText = `£${Math.round(avgPrice).toLocaleString()}`;
-
-    if (countWithArea > 0) {
-      const avgPpSqft = totalPpSqft / countWithArea;
-      const avgPpM2 = avgPpSqft / 10.764;
-      if (areaMetric)
-        areaMetric.innerText = `£${Math.round(
-          avgPpSqft
-        ).toLocaleString()} /SQFT ( £${Math.round(
-          avgPpM2
-        ).toLocaleString()} /M² )`;
-    } else {
-      if (areaMetric) areaMetric.innerText = "N/A";
-    }
-
-    if (laName) {
-      await computeHpiTables(enriched, laName);
-    } else {
-      setHpiTablesUnavailable("NO_LOCAL_AUTHORITY");
-    }
-  } catch (e) {
-    if (marketBody)
-      marketBody.innerHTML =
-        "<tr><td colspan='4' class='p-4 text-center text-red-500 text-[10px]'>PPI_ERROR</td></tr>";
-  }
-}
-
-// --- FLOOD / RADON (Worker Routes) ---
+// FLOOD / RADON
 async function loadFloodRisk(cleanPostcode) {
   const el = document.getElementById("floodStatus");
   if (el) {
@@ -287,7 +163,7 @@ async function loadFloodRisk(cleanPostcode) {
       el.classList.add("indicator-amber");
       el.innerText = "UNKNOWN";
     }
-  } catch (e) {
+  } catch {
     if (!el) return;
     el.classList.remove("animate-pulse");
     el.classList.add("indicator-red");
@@ -331,7 +207,7 @@ async function loadRadonRisk(cleanPostcode) {
       el.classList.add("indicator-amber");
       el.innerText = "UNKNOWN";
     }
-  } catch (e) {
+  } catch {
     if (!el) return;
     el.classList.remove("animate-pulse");
     el.classList.add("indicator-red");
@@ -339,7 +215,44 @@ async function loadRadonRisk(cleanPostcode) {
   }
 }
 
-// --- HPI TABLES (Worker HPI Route) ---
+// EPC rows by postcode (single fetch, reused)
+async function getEpcRowsForPostcode(postcode) {
+  const state = window.__PER_STATE__;
+  const cleanPc = postcode.replace(/\s+/g, "").toUpperCase();
+  if (state.epcRowsByPostcode[cleanPc]) return state.epcRowsByPostcode[cleanPc];
+
+  const data = await safeFetch(
+    `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${cleanPc}`
+  );
+  const rows = data?.rows || [];
+  state.epcRowsByPostcode[cleanPc] = rows;
+  return rows;
+}
+
+// EPC AREA LOOKUP FOR PPI (postcode-only + PAON)
+async function lookupEpcAreaFromPostcode(paon, postcode) {
+  if (!paon || !postcode) return null;
+  const rows = await getEpcRowsForPostcode(postcode);
+  if (!rows.length) return null;
+
+  const paonStr = paon.toString().toUpperCase().trim();
+  const match = rows.find((r) => {
+    const addr = (r.address || "").toUpperCase();
+    return addr.startsWith(paonStr + " ") || addr === paonStr;
+  });
+
+  if (!match || !match["total-floor-area"]) return null;
+
+  const sqm = parseFloat(match["total-floor-area"]);
+  if (!sqm || sqm <= 0) return null;
+
+  return {
+    sqm,
+    sqft: sqm * 10.764,
+  };
+}
+
+// HPI helpers
 function setHpiTablesUnavailable(reason) {
   const techBody = document.getElementById("hpiTechBody");
   const simpleBody = document.getElementById("hpiSimpleBody");
@@ -375,7 +288,7 @@ async function computeHpiTables(enrichedTxs, laName) {
 
     for (const t of enrichedTxs) {
       const dateStr = t.date.split("T")[0];
-      const month = dateStr.slice(0, 7); // YYYY-MM
+      const month = dateStr.slice(0, 7);
 
       const hpiRes = await fetch(
         `${PROXY_URL}?hpi=1&la=${encodeURIComponent(laName)}&month=${encodeURIComponent(
@@ -478,12 +391,126 @@ async function computeHpiTables(enrichedTxs, laName) {
     } else {
       if (hpiAreaAvg) hpiAreaAvg.innerText = "N/A";
     }
-  } catch (e) {
+  } catch {
     setHpiTablesUnavailable("HPI_EXCEPTION");
   }
 }
 
-// --- MAPLIBRE (single EPC marker) ---
+// PPI + EPC AREA + AREA_AVG
+async function loadMarketData(pc) {
+  const marketBody = document.getElementById("marketBody");
+  const valMetric = document.getElementById("valMetric");
+  const areaMetric = document.getElementById("areaMetric");
+  if (marketBody)
+    marketBody.innerHTML =
+      "<tr><td colspan='4' class='p-4 text-center animate-pulse text-[10px] text-sky-400'>QUERYING_SPARQL...</td></tr>";
+
+  try {
+    const res = await fetch(
+      `${PROXY_URL}?ppi=1&postcode=${encodeURIComponent(pc)}`
+    );
+    const data = await res.json();
+    if (!marketBody) return;
+    marketBody.innerHTML = "";
+
+    const txs = data.transactions || [];
+    window.__PER_STATE__.ppi = txs;
+
+    if (txs.length === 0) {
+      marketBody.innerHTML =
+        "<tr><td colspan='4' class='p-4 text-center text-gray-700 text-[10px]'>NO_PPI_DATA</td></tr>";
+      if (valMetric) valMetric.innerText = "--";
+      if (areaMetric) areaMetric.innerText = "--";
+      return;
+    }
+
+    const state = window.__PER_STATE__;
+    const laName = state.epcDetail?.["local-authority-label"] || null;
+    const mainPostcode = state.epc?.postcode || pc;
+
+    let totalPrice = 0;
+    let totalPpSqft = 0;
+    let countWithArea = 0;
+    const enriched = [];
+
+    for (const t of txs) {
+      const addrCore = `${t.paon || ""} ${t.street || ""}`.trim();
+
+      let areaSqm = null;
+      let areaSqft = null;
+
+      try {
+        const area = await lookupEpcAreaFromPostcode(t.paon, mainPostcode);
+        if (area) {
+          areaSqm = area.sqm;
+          areaSqft = area.sqft;
+        }
+      } catch {}
+
+      const dateStr = t.date.split("T")[0];
+      const rowEl = document.createElement("tr");
+      const areaLabel =
+        areaSqm && areaSqft
+          ? `${Math.round(areaSqft).toLocaleString()} sqft (${areaSqm} m²)`
+          : "N/A";
+
+      rowEl.innerHTML = `
+        <td class='p-4 text-gray-500 text-[10px]'>${dateStr}</td>
+        <td class='p-4 text-white font-medium text-[10px]'>${addrCore}</td>
+        <td class='p-4 text-green-500 font-bold text-[10px]'>£${t.amount.toLocaleString()}</td>
+        <td class='p-4 text-sky-400 font-medium text-[10px]'>${areaLabel}</td>
+      `;
+      marketBody.appendChild(rowEl);
+
+      totalPrice += t.amount;
+
+      let ppSqft = null;
+      if (areaSqft && areaSqft > 0) {
+        ppSqft = t.amount / areaSqft;
+        totalPpSqft += ppSqft;
+        countWithArea += 1;
+      }
+
+      enriched.push({
+        ...t,
+        addrCore,
+        areaSqm,
+        areaSqft,
+        ppSqft,
+      });
+    }
+
+    window.__PER_STATE__.ppiEnriched = enriched;
+
+    const avgPrice = totalPrice / txs.length;
+    if (valMetric) valMetric.innerText = `£${Math.round(avgPrice).toLocaleString()}`;
+
+    if (countWithArea > 0) {
+      const avgPpSqft = totalPpSqft / countWithArea;
+      const avgPpM2 = avgPpSqft / 10.764;
+      if (areaMetric)
+        areaMetric.innerText = `£${Math.round(
+          avgPpSqft
+        ).toLocaleString()} /SQFT ( £${Math.round(
+          avgPpM2
+        ).toLocaleString()} /M² )`;
+    } else {
+      if (areaMetric) areaMetric.innerText = "N/A";
+    }
+
+    if (laName) {
+      await computeHpiTables(enriched, laName);
+    } else {
+      setHpiTablesUnavailable("NO_LOCAL_AUTHORITY");
+    }
+  } catch {
+    if (marketBody)
+      marketBody.innerHTML =
+        "<tr><td colspan='4' class='p-4 text-center text-red-500 text-[10px]'>PPI_ERROR</td></tr>";
+  }
+}
+
+// MAP
 function initMap(epc) {
   if (!epc || epc.latitude == null || epc.longitude == null) return;
   const state = window.__PER_STATE__;
@@ -520,12 +547,11 @@ function initMap(epc) {
   }
 }
 
-// --- FINAL AUDIT ---
+// FINAL AUDIT
 async function initiateFinalAudit(epcSearchRow) {
   document.getElementById("dashboard").classList.remove("hidden");
   setEpcState("pending");
 
-  // Fetch full EPC certificate detail to get lat/lon + LA
   let epcDetail = epcSearchRow;
   try {
     const rrn = epcSearchRow.rrn || epcSearchRow["rrn"];
@@ -537,9 +563,7 @@ async function initiateFinalAudit(epcSearchRow) {
       );
       if (!detail.error) epcDetail = detail;
     }
-  } catch {
-    // fall back to search row
-  }
+  } catch {}
 
   const epc = normalizeEpc(epcDetail);
   window.__PER_STATE__.epc = epc;
@@ -571,7 +595,7 @@ async function initiateFinalAudit(epcSearchRow) {
   updateStatus("AUDIT_COMPLETE", "success");
 }
 
-// --- DISCOVERY LOGIC ---
+// DISCOVERY
 window.handleDiscovery = async function () {
   const input = document.getElementById("mainInput").value.trim();
   if (!input) return updateStatus("INPUT_REQUIRED", "error");
