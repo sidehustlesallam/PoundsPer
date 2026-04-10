@@ -1,8 +1,9 @@
 /**
- * £Per Audit Engine v12.0
- * - Specialist Worker Modules: PPI (SPARQL), Schools (Ofsted), Flood, Radon
- * - MapLibre spatial layer
- * - Blueprint-style UI
+ * £Per Audit Engine v12.1
+ * - Specialist Worker Modules: PPI, Schools, Flood, Radon, HPI
+ * - MapLibre spatial layer (single EPC marker)
+ * - EPC detail fetch (lat/lon + local authority)
+ * - PPI enriched with EPC area + HPI-adjusted valuations
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
@@ -10,25 +11,14 @@ const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
 // --- GLOBAL STATE ---
 window.__PER_STATE__ = {
   epc: null,
+  epcDetail: null,
   schools: [],
   ppi: [],
+  ppiEnriched: [], // with area + HPI
   flood: null,
   radon: null,
   map: null,
-  mapLayers: {
-    epc: null,
-    schools: null,
-    ppi: null,
-    flood: null,
-    radon: null,
-  },
-  activeLayers: {
-    epc: true,
-    schools: true,
-    ppi: true,
-    flood: true,
-    radon: true,
-  },
+  mapMarker: null,
 };
 
 // --- UI HELPERS ---
@@ -40,7 +30,8 @@ function updateStatus(msg, type) {
 
   let cls = "w-1.5 h-1.5 rounded-full ";
   if (type === "loading") cls += "bg-sky-400 animate-pulse";
-  else if (type === "error") cls += "bg-red-600 shadow-[0_0_8px_rgba(248,113,113,0.8)]";
+  else if (type === "error")
+    cls += "bg-red-600 shadow-[0_0_8px_rgba(248,113,113,0.8)]";
   else cls += "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]";
   dot.className = cls;
 }
@@ -64,7 +55,7 @@ function setEpcState(state, meta = "") {
   }
 }
 
-// --- GENERIC PROXY FETCH ---
+// --- GENERIC PROXY FETCH FOR EPC ---
 async function safeFetch(url) {
   try {
     const res = await fetch(`${PROXY_URL}?url=${encodeURIComponent(url)}`);
@@ -91,6 +82,7 @@ function normalizeEpc(epcRaw) {
     rating: epc["current-energy-rating"] || "?",
     latitude: lat,
     longitude: lon,
+    localAuthority: epc["local-authority-label"] || null,
   };
 }
 
@@ -98,10 +90,13 @@ function normalizeEpc(epcRaw) {
 async function loadSchoolsFromOfsted(cleanPostcode) {
   const container = document.getElementById("schoolList");
   if (!container) return;
-  container.innerHTML = "<div class='text-[10px] animate-pulse text-sky-400'>SCRAPING_OFSTED_DATA...</div>";
+  container.innerHTML =
+    "<div class='text-[10px] animate-pulse text-sky-400'>SCRAPING_OFSTED_DATA...</div>";
 
   try {
-    const res = await fetch(`${PROXY_URL}?schools=1&postcode=${encodeURIComponent(cleanPostcode)}`);
+    const res = await fetch(
+      `${PROXY_URL}?schools=1&postcode=${encodeURIComponent(cleanPostcode)}`
+    );
     const data = await res.json();
     container.innerHTML = "";
 
@@ -120,49 +115,133 @@ async function loadSchoolsFromOfsted(cleanPostcode) {
         container.appendChild(div);
       });
     } else {
-      container.innerHTML = "<div class='text-gray-600 text-[10px]'>NO_LOCAL_SCHOOLS_FOUND</div>";
+      container.innerHTML =
+        "<div class='text-gray-600 text-[10px]'>NO_LOCAL_SCHOOLS_FOUND</div>";
     }
   } catch (e) {
-    container.innerHTML = "<div class='text-red-500 text-[10px]'>SCHOOLS_OFFLINE</div>";
+    container.innerHTML =
+      "<div class='text-red-500 text-[10px]'>SCHOOLS_OFFLINE</div>";
   }
 }
 
-// --- MARKET DATA (Worker SPARQL Route) ---
+// --- MARKET DATA (Worker SPARQL Route) + EPC AREA + HPI ---
 async function loadMarketData(pc) {
   const marketBody = document.getElementById("marketBody");
   const valMetric = document.getElementById("valMetric");
+  const areaMetric = document.getElementById("areaMetric");
   if (marketBody)
     marketBody.innerHTML =
       "<tr><td colspan='4' class='p-4 text-center animate-pulse text-[10px] text-sky-400'>QUERYING_SPARQL...</td></tr>";
 
   try {
-    const res = await fetch(`${PROXY_URL}?ppi=1&postcode=${encodeURIComponent(pc)}`);
+    const res = await fetch(
+      `${PROXY_URL}?ppi=1&postcode=${encodeURIComponent(pc)}`
+    );
     const data = await res.json();
     if (!marketBody) return;
     marketBody.innerHTML = "";
 
-    const txs = data.transactions || [];
+    const txs = (data.transactions || []).slice(0, 5);
     window.__PER_STATE__.ppi = txs;
 
-    if (txs.length > 0) {
-      txs
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .slice(0, 5)
-        .forEach((t) => {
-          const row = document.createElement("tr");
-          const addr = `${t.paon || ""} ${t.street || ""}`.trim();
-          row.innerHTML = `
-            <td class='p-4 text-gray-500 text-[10px]'>${t.date.split("T")[0]}</td>
-            <td class='p-4 text-white font-medium text-[10px]'>${addr}</td>
-            <td class='p-4 text-green-500 font-bold text-[10px]'>£${t.amount.toLocaleString()}</td>
-          `;
-          marketBody.appendChild(row);
-        });
-      const avg = txs.reduce((acc, curr) => acc + curr.amount, 0) / txs.length;
-      if (valMetric) valMetric.innerText = `£${Math.round(avg).toLocaleString()}`;
-    } else {
+    if (txs.length === 0) {
       marketBody.innerHTML =
         "<tr><td colspan='4' class='p-4 text-center text-gray-700 text-[10px]'>NO_PPI_DATA</td></tr>";
+      if (valMetric) valMetric.innerText = "--";
+      if (areaMetric) areaMetric.innerText = "--";
+      return;
+    }
+
+    const state = window.__PER_STATE__;
+    const laName = state.epcDetail?.["local-authority-label"] || null;
+    const mainPostcode = state.epc?.postcode || pc;
+
+    let totalPrice = 0;
+    let totalPpSqft = 0;
+    let countWithArea = 0;
+
+    const enriched = [];
+
+    for (const t of txs) {
+      const addrCore = `${t.paon || ""} ${t.street || ""}`.trim();
+      const fullAddr = addrCore ? `${addrCore}, ${mainPostcode}` : mainPostcode;
+
+      let areaSqm = null;
+      let areaSqft = null;
+
+      try {
+        const epcSearch = await safeFetch(
+          `https://epc.opendatacommunities.org/api/v1/domestic/search?address=${encodeURIComponent(
+            fullAddr
+          )}`
+        );
+        const row = epcSearch?.rows?.[0];
+        if (row && row["total-floor-area"]) {
+          areaSqm = parseFloat(row["total-floor-area"]);
+          if (!isNaN(areaSqm) && areaSqm > 0) {
+            areaSqft = areaSqm * 10.764;
+          }
+        }
+      } catch {
+        // ignore EPC area failure
+      }
+
+      const dateStr = t.date.split("T")[0];
+      const rowEl = document.createElement("tr");
+      const areaLabel =
+        areaSqm && areaSqft
+          ? `${Math.round(areaSqft).toLocaleString()} sqft (${areaSqm} m²)`
+          : "N/A";
+
+      rowEl.innerHTML = `
+        <td class='p-4 text-gray-500 text-[10px]'>${dateStr}</td>
+        <td class='p-4 text-white font-medium text-[10px]'>${addrCore}</td>
+        <td class='p-4 text-green-500 font-bold text-[10px]'>£${t.amount.toLocaleString()}</td>
+        <td class='p-4 text-sky-400 font-medium text-[10px]'>${areaLabel}</td>
+      `;
+      marketBody.appendChild(rowEl);
+
+      totalPrice += t.amount;
+
+      let ppSqft = null;
+      if (areaSqft && areaSqft > 0) {
+        ppSqft = t.amount / areaSqft;
+        totalPpSqft += ppSqft;
+        countWithArea += 1;
+      }
+
+      enriched.push({
+        ...t,
+        addrCore,
+        fullAddr,
+        areaSqm,
+        areaSqft,
+        pricePerSqft: ppSqft,
+      });
+    }
+
+    window.__PER_STATE__.ppiEnriched = enriched;
+
+    const avgPrice = totalPrice / txs.length;
+    if (valMetric) valMetric.innerText = `£${Math.round(avgPrice).toLocaleString()}`;
+
+    if (countWithArea > 0) {
+      const avgPpSqft = totalPpSqft / countWithArea;
+      const avgPpM2 = avgPpSqft / 10.764;
+      if (areaMetric)
+        areaMetric.innerText = `£${Math.round(
+          avgPpSqft
+        ).toLocaleString()} /SQFT ( £${Math.round(
+          avgPpM2
+        ).toLocaleString()} /M² )`;
+    } else {
+      if (areaMetric) areaMetric.innerText = "N/A";
+    }
+
+    if (laName) {
+      await computeHpiTables(enriched, laName);
+    } else {
+      setHpiTablesUnavailable("NO_LOCAL_AUTHORITY");
     }
   } catch (e) {
     if (marketBody)
@@ -180,12 +259,19 @@ async function loadFloodRisk(cleanPostcode) {
   }
 
   try {
-    const res = await fetch(`${PROXY_URL}?flood=1&postcode=${encodeURIComponent(cleanPostcode)}`);
+    const res = await fetch(
+      `${PROXY_URL}?flood=1&postcode=${encodeURIComponent(cleanPostcode)}`
+    );
     const data = await res.json();
     window.__PER_STATE__.flood = data;
 
     if (!el) return;
-    el.classList.remove("animate-pulse", "indicator-green", "indicator-red", "indicator-amber");
+    el.classList.remove(
+      "animate-pulse",
+      "indicator-green",
+      "indicator-red",
+      "indicator-amber"
+    );
 
     const band = (data.risk_band || "UNKNOWN").toUpperCase();
     if (band === "LOW") {
@@ -217,12 +303,19 @@ async function loadRadonRisk(cleanPostcode) {
   }
 
   try {
-    const res = await fetch(`${PROXY_URL}?radon=1&postcode=${encodeURIComponent(cleanPostcode)}`);
+    const res = await fetch(
+      `${PROXY_URL}?radon=1&postcode=${encodeURIComponent(cleanPostcode)}`
+    );
     const data = await res.json();
     window.__PER_STATE__.radon = data;
 
     if (!el) return;
-    el.classList.remove("animate-pulse", "indicator-green", "indicator-red", "indicator-amber");
+    el.classList.remove(
+      "animate-pulse",
+      "indicator-green",
+      "indicator-red",
+      "indicator-amber"
+    );
 
     const band = (data.band || "UNKNOWN").toUpperCase();
     if (band === "BAND_1") {
@@ -246,188 +339,222 @@ async function loadRadonRisk(cleanPostcode) {
   }
 }
 
-// --- MAPLAYER / MAPLIBRE ---
-function initMapIfNeeded(epc) {
-  if (!epc || epc.latitude == null || epc.longitude == null) return;
-  const state = window.__PER_STATE__;
-  if (state.map) return;
+// --- HPI TABLES (Worker HPI Route) ---
+function setHpiTablesUnavailable(reason) {
+  const techBody = document.getElementById("hpiTechBody");
+  const simpleBody = document.getElementById("hpiSimpleBody");
+  const hpiMarketAvg = document.getElementById("hpiMarketAvg");
+  const hpiAreaAvg = document.getElementById("hpiAreaAvg");
 
-  const center = [epc.longitude, epc.latitude];
-
-  const map = new maplibregl.Map({
-    container: "map",
-    style: "https://demotiles.maplibre.org/style.json",
-    center,
-    zoom: 14,
-  });
-
-  map.addControl(new maplibregl.NavigationControl(), "top-right");
-
-  map.on("load", () => {
-    state.map = map;
-
-    map.addSource("epc-point", {
-      type: "geojson",
-      data: {
-        type: "FeatureCollection",
-        features: [],
-      },
-    });
-
-    map.addLayer({
-      id: "epc-point-layer",
-      type: "circle",
-      source: "epc-point",
-      paint: {
-        "circle-radius": 6,
-        "circle-color": "#38bdf8",
-        "circle-stroke-width": 2,
-        "circle-stroke-color": "#0f172a",
-      },
-    });
-
-    map.addSource("schools-point", {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-    map.addLayer({
-      id: "schools-point-layer",
-      type: "circle",
-      source: "schools-point",
-      paint: {
-        "circle-radius": 4,
-        "circle-color": "#22c55e",
-        "circle-stroke-width": 1,
-        "circle-stroke-color": "#0f172a",
-      },
-    });
-
-    map.addSource("ppi-point", {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-    map.addLayer({
-      id: "ppi-point-layer",
-      type: "circle",
-      source: "ppi-point",
-      paint: {
-        "circle-radius": 3,
-        "circle-color": "#f97316",
-        "circle-stroke-width": 1,
-        "circle-stroke-color": "#0f172a",
-      },
-    });
-
-    state.mapLayers.epc = "epc-point-layer";
-    state.mapLayers.schools = "schools-point-layer";
-    state.mapLayers.ppi = "ppi-point-layer";
-    state.mapLayers.flood = null;
-    state.mapLayers.radon = null;
-
-    updateMapLayers();
-  });
+  if (techBody)
+    techBody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-700 italic">HPI_UNAVAILABLE (${reason})</td></tr>`;
+  if (simpleBody)
+    simpleBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-700 italic">HPI_UNAVAILABLE (${reason})</td></tr>`;
+  if (hpiMarketAvg) hpiMarketAvg.innerText = "--";
+  if (hpiAreaAvg) hpiAreaAvg.innerText = "--";
 }
 
-function updateMapLayers() {
-  const state = window.__PER_STATE__;
-  const map = state.map;
-  if (!map) return;
+async function computeHpiTables(enrichedTxs, laName) {
+  const techBody = document.getElementById("hpiTechBody");
+  const simpleBody = document.getElementById("hpiSimpleBody");
+  const hpiMarketAvg = document.getElementById("hpiMarketAvg");
+  const hpiAreaAvg = document.getElementById("hpiAreaAvg");
 
-  const epc = state.epc;
-  const schools = state.schools || [];
-  const ppi = state.ppi || [];
+  if (techBody)
+    techBody.innerHTML =
+      '<tr><td colspan="8" class="p-4 text-center text-sky-400 text-[10px]">COMPUTING_HPI...</td></tr>';
+  if (simpleBody)
+    simpleBody.innerHTML =
+      '<tr><td colspan="4" class="p-4 text-center text-sky-400 text-[10px]">COMPUTING_HPI...</td></tr>';
 
-  if (epc && epc.latitude != null && epc.longitude != null) {
-    const epcSource = map.getSource("epc-point");
-    if (epcSource) {
-      epcSource.setData({
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            geometry: {
-              type: "Point",
-              coordinates: [epc.longitude, epc.latitude],
-            },
-            properties: {
-              title: epc.address,
-              rating: epc.rating,
-            },
-          },
-        ],
+  try {
+    const rows = [];
+    let totalAdjPrice = 0;
+    let totalAdjPpSqft = 0;
+    let countAdjArea = 0;
+
+    for (const t of enrichedTxs) {
+      const dateStr = t.date.split("T")[0];
+      const month = dateStr.slice(0, 7); // YYYY-MM
+
+      const hpiRes = await fetch(
+        `${PROXY_URL}?hpi=1&la=${encodeURIComponent(laName)}&month=${encodeURIComponent(
+          month
+        )}`
+      );
+      const hpi = await hpiRes.json();
+      if (hpi.error || !hpi.factor) continue;
+
+      const factor = hpi.factor;
+      const adjPrice = t.amount * factor;
+
+      let ppSqft = null;
+      let adjPpSqft = null;
+      if (t.areaSqft && t.areaSqft > 0) {
+        ppSqft = t.amount / t.areaSqft;
+        adjPpSqft = adjPrice / t.areaSqft;
+        totalAdjPpSqft += adjPpSqft;
+        countAdjArea += 1;
+      }
+
+      totalAdjPrice += adjPrice;
+
+      rows.push({
+        ...t,
+        dateStr,
+        factor,
+        adjPrice,
+        ppSqft,
+        adjPpSqft,
       });
     }
-  }
 
-  const schoolSource = map.getSource("schools-point");
-  if (schoolSource) {
-    schoolSource.setData({
-      type: "FeatureCollection",
-      features: schools.map((s, idx) => ({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [epc.longitude + 0.002 * (idx + 1), epc.latitude + 0.002 * (idx + 1)],
-        },
-        properties: {
-          title: s.name,
-          rating: s.rating,
-        },
-      })),
+    if (rows.length === 0) {
+      setHpiTablesUnavailable("NO_VALID_HPI_ROWS");
+      return;
+    }
+
+    if (techBody) techBody.innerHTML = "";
+    if (simpleBody) simpleBody.innerHTML = "";
+
+    rows.forEach((r) => {
+      const techRow = document.createElement("tr");
+      const areaLabel =
+        r.areaSqm && r.areaSqft
+          ? `${Math.round(r.areaSqft).toLocaleString()} sqft (${r.areaSqm} m²)`
+          : "N/A";
+      const ppSqftLabel = r.ppSqft
+        ? `£${Math.round(r.ppSqft).toLocaleString()}`
+        : "N/A";
+      const adjPpSqftLabel = r.adjPpSqft
+        ? `£${Math.round(r.adjPpSqft).toLocaleString()}`
+        : "N/A";
+
+      techRow.innerHTML = `
+        <td class='p-2 text-gray-500'>${r.dateStr}</td>
+        <td class='p-2 text-white'>${r.addrCore}</td>
+        <td class='p-2 text-green-500 font-bold'>£${r.amount.toLocaleString()}</td>
+        <td class='p-2 text-sky-400'>${areaLabel}</td>
+        <td class='p-2 text-gray-300'>${ppSqftLabel}</td>
+        <td class='p-2 text-amber-400'>${r.factor.toFixed(3)}</td>
+        <td class='p-2 text-emerald-400 font-bold'>£${Math.round(
+          r.adjPrice
+        ).toLocaleString()}</td>
+        <td class='p-2 text-gray-100'>${adjPpSqftLabel}</td>
+      `;
+      techBody.appendChild(techRow);
+
+      const simpleRow = document.createElement("tr");
+      const delta = r.adjPrice - r.amount;
+      const deltaLabel = `${delta >= 0 ? "+" : "-"}£${Math.abs(
+        Math.round(delta)
+      ).toLocaleString()}`;
+      simpleRow.innerHTML = `
+        <td class='p-2 text-white'>${r.addrCore}</td>
+        <td class='p-2 text-green-500 font-bold'>£${r.amount.toLocaleString()}</td>
+        <td class='p-2 text-emerald-400 font-bold'>£${Math.round(
+          r.adjPrice
+        ).toLocaleString()}</td>
+        <td class='p-2 ${
+          delta >= 0 ? "text-emerald-400" : "text-red-400"
+        } font-bold'>${deltaLabel}</td>
+      `;
+      simpleBody.appendChild(simpleRow);
     });
-  }
 
-  const ppiSource = map.getSource("ppi-point");
-  if (ppiSource) {
-    ppiSource.setData({
-      type: "FeatureCollection",
-      features: ppi.map((t, idx) => ({
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [epc.longitude - 0.002 * (idx + 1), epc.latitude - 0.002 * (idx + 1)],
-        },
-        properties: {
-          amount: t.amount,
-        },
-      })),
-    });
-  }
+    const avgAdjPrice = totalAdjPrice / rows.length;
+    if (hpiMarketAvg)
+      hpiMarketAvg.innerText = `£${Math.round(avgAdjPrice).toLocaleString()}`;
 
-  Object.entries(state.mapLayers).forEach(([key, layerId]) => {
-    if (!layerId) return;
-    const visible = state.activeLayers[key];
-    if (!map.getLayer(layerId)) return;
-    map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
-  });
+    if (countAdjArea > 0) {
+      const avgAdjPpSqft = totalAdjPpSqft / countAdjArea;
+      const avgAdjPpM2 = avgAdjPpSqft / 10.764;
+      if (hpiAreaAvg)
+        hpiAreaAvg.innerText = `£${Math.round(
+          avgAdjPpSqft
+        ).toLocaleString()} /SQFT ( £${Math.round(
+          avgAdjPpM2
+        ).toLocaleString()} /M² )`;
+    } else {
+      if (hpiAreaAvg) hpiAreaAvg.innerText = "N/A";
+    }
+  } catch (e) {
+    setHpiTablesUnavailable("HPI_EXCEPTION");
+  }
 }
 
-window.toggleLayer = function (layerKey) {
+// --- MAPLIBRE (single EPC marker) ---
+function initMap(epc) {
+  if (!epc || epc.latitude == null || epc.longitude == null) return;
   const state = window.__PER_STATE__;
-  state.activeLayers[layerKey] = !state.activeLayers[layerKey];
 
-  const buttons = document.querySelectorAll(`[data-layer="${layerKey}"]`);
-  buttons.forEach((btn) => {
-    if (state.activeLayers[layerKey]) btn.classList.add("active");
-    else btn.classList.remove("active");
-  });
+  if (!state.map) {
+    const map = new maplibregl.Map({
+      container: "map",
+      style: "https://demotiles.maplibre.org/style.json",
+      center: [epc.longitude, epc.latitude],
+      zoom: 15,
+    });
 
-  updateMapLayers();
-};
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+    map.on("load", () => {
+      state.map = map;
+      const marker = new maplibregl.Marker({
+        color: "#38bdf8",
+      })
+        .setLngLat([epc.longitude, epc.latitude])
+        .addTo(map);
+      state.mapMarker = marker;
+    });
+  } else {
+    state.map.setCenter([epc.longitude, epc.latitude]);
+    state.map.setZoom(15);
+    if (state.mapMarker) {
+      state.mapMarker.setLngLat([epc.longitude, epc.latitude]);
+    } else {
+      state.mapMarker = new maplibregl.Marker({ color: "#38bdf8" })
+        .setLngLat([epc.longitude, epc.latitude])
+        .addTo(state.map);
+    }
+  }
+}
 
 // --- FINAL AUDIT ---
-async function initiateFinalAudit(epcRaw) {
+async function initiateFinalAudit(epcSearchRow) {
   document.getElementById("dashboard").classList.remove("hidden");
-  const epc = normalizeEpc(epcRaw);
-  window.__PER_STATE__.epc = epc;
+  setEpcState("pending");
 
-  document.getElementById("displayAddress").innerText = epc.address.toUpperCase();
+  // Fetch full EPC certificate detail to get lat/lon + LA
+  let epcDetail = epcSearchRow;
+  try {
+    const rrn = epcSearchRow.rrn || epcSearchRow["rrn"];
+    if (rrn) {
+      const detail = await safeFetch(
+        `https://epc.opendatacommunities.org/api/v1/domestic/certificate/${encodeURIComponent(
+          rrn
+        )}`
+      );
+      if (!detail.error) epcDetail = detail;
+    }
+  } catch {
+    // fall back to search row
+  }
+
+  const epc = normalizeEpc(epcDetail);
+  window.__PER_STATE__.epc = epc;
+  window.__PER_STATE__.epcDetail = epcDetail;
+
+  document.getElementById("displayAddress").innerText =
+    epc.address.toUpperCase();
   document.getElementById("displayUprn").innerText = epc.uprn;
   document.getElementById("epcBadge").innerText = epc.rating;
 
   const sqftMetric = document.getElementById("sqftMetric");
   sqftMetric.innerText =
-    epc.area > 0 ? `${Math.round(epc.area * 10.764)} SQFT (${epc.area}m²)` : "N/A";
+    epc.area > 0
+      ? `${Math.round(epc.area * 10.764)} SQFT (${epc.area}m²)`
+      : "N/A";
 
   const cleanPc = epc.postcode.replace(/\s+/g, "").toUpperCase();
   updateStatus("AUDIT_ACTIVE", "loading");
@@ -440,9 +567,7 @@ async function initiateFinalAudit(epcRaw) {
     loadRadonRisk(cleanPc),
   ]);
 
-  initMapIfNeeded(epc);
-  updateMapLayers();
-
+  initMap(epc);
   updateStatus("AUDIT_COMPLETE", "success");
 }
 
