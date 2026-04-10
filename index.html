@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>£PER | Property Audit Engine v12.0</title>
+    <title>£PER | Property Audit Engine v12.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -57,24 +57,10 @@
         .indicator-green { color: #22c55e; text-shadow: 0 0 8px rgba(34, 197, 94, 0.2); }
         .indicator-red { color: #ef4444; text-shadow: 0 0 8px rgba(239, 68, 68, 0.2); }
         .indicator-amber { color: #fbbf24; text-shadow: 0 0 8px rgba(251, 191, 36, 0.2); }
-        .epc-error { background-color: #ef4444 !important; color: #fff !important; }
-        .epc-pending { background-color: #000; color: #fbbf24; }
         #map {
             width: 100%;
-            height: 360px;
+            height: 320px;
             border-top: 1px solid #1f2937;
-        }
-        .layer-toggle {
-            border: 1px solid #1f2937;
-            background: #020617;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-        .layer-toggle.active {
-            border-color: var(--accent);
-            color: #e0f2fe;
-            box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4);
         }
     </style>
 </head>
@@ -82,7 +68,7 @@
     <nav class="p-4 border-b border-gray-900 flex justify-between items-center bg-black/90 backdrop-blur sticky top-0 z-50">
         <div class="flex items-baseline gap-1">
             <span class="text-xl font-black text-white italic tracking-tighter">£PER</span>
-            <span class="data-mono text-[9px] text-gray-600">v12.0_BLUEPRINT</span>
+            <span class="data-mono text-[9px] text-gray-600">v12.1_BLUEPRINT</span>
         </div>
         <div class="flex items-center gap-3 data-mono text-[10px]">
             <span id="statusText" class="text-gray-400 uppercase">System_Ready</span>
@@ -197,40 +183,20 @@
                     <div class="audit-header border-none p-0 text-white">
                         Land Registry PPI (Recent Sales)
                     </div>
-                    <div class="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto">
-                        <div class="data-mono text-[10px] text-gray-500">
+                    <div class="data-mono text-[10px] text-gray-500 text-right">
+                        <div>
                             MARKET_AVG:
                             <span
                                 id="valMetric"
                                 class="text-green-500 font-bold tracking-tighter uppercase"
                             >--</span>
                         </div>
-                        <div class="flex flex-wrap gap-1">
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="epc"
-                                onclick="toggleLayer('epc')"
-                            >EPC</button>
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="schools"
-                                onclick="toggleLayer('schools')"
-                            >Schools</button>
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="ppi"
-                                onclick="toggleLayer('ppi')"
-                            >PPI</button>
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="flood"
-                                onclick="toggleLayer('flood')"
-                            >Flood</button>
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="radon"
-                                onclick="toggleLayer('radon')"
-                            >Radon</button>
+                        <div>
+                            AREA_AVG:
+                            <span
+                                id="areaMetric"
+                                class="text-sky-400 font-bold tracking-tighter uppercase"
+                            >--</span>
                         </div>
                     </div>
                 </div>
@@ -241,6 +207,7 @@
                                 <th class="p-4 font-bold">TRANSFER_DATE</th>
                                 <th class="p-4 font-bold">STREET_ADDRESS</th>
                                 <th class="p-4 font-bold">CONSIDERATION</th>
+                                <th class="p-4 font-bold">AREA</th>
                             </tr>
                         </thead>
                         <tbody id="marketBody" class="divide-y divide-gray-900 text-gray-300">
@@ -252,6 +219,73 @@
                         </tbody>
                     </table>
                 </div>
+
+                <div class="p-5 border-b border-gray-900 bg-black/60">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div class="audit-header border-none p-0 text-white">
+                            HPI‑Adjusted Comparable Sales (Technical)
+                        </div>
+                        <div class="data-mono text-[10px] text-gray-500 text-right">
+                            <div>
+                                ADJ_MARKET_AVG:
+                                <span id="hpiMarketAvg" class="text-emerald-400 font-bold tracking-tighter uppercase">--</span>
+                            </div>
+                            <div>
+                                ADJ_AREA_AVG:
+                                <span id="hpiAreaAvg" class="text-sky-400 font-bold tracking-tighter uppercase">--</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto mt-3">
+                        <table class="w-full text-left data-mono text-[10px]">
+                            <thead class="bg-black/70 text-gray-500">
+                                <tr>
+                                    <th class="p-2 font-bold">DATE</th>
+                                    <th class="p-2 font-bold">ADDRESS</th>
+                                    <th class="p-2 font-bold">ORIG_PRICE</th>
+                                    <th class="p-2 font-bold">AREA</th>
+                                    <th class="p-2 font-bold">£/SQFT</th>
+                                    <th class="p-2 font-bold">HPI_FACTOR</th>
+                                    <th class="p-2 font-bold">ADJ_PRICE</th>
+                                    <th class="p-2 font-bold">ADJ_£/SQFT</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hpiTechBody" class="divide-y divide-gray-900 text-gray-300">
+                                <tr>
+                                    <td colspan="8" class="p-4 text-center text-gray-700 italic">
+                                        Awaiting_HPI_Computation...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="p-5 bg-black/70 border-b border-gray-900">
+                    <div class="audit-header border-none p-0 text-white mb-3">
+                        HPI‑Adjusted Valuation Summary
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left data-mono text-[10px]">
+                            <thead class="bg-black/80 text-gray-500">
+                                <tr>
+                                    <th class="p-2 font-bold">ADDRESS</th>
+                                    <th class="p-2 font-bold">ORIG_PRICE</th>
+                                    <th class="p-2 font-bold">ADJ_PRICE</th>
+                                    <th class="p-2 font-bold">DELTA</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hpiSimpleBody" class="divide-y divide-gray-900 text-gray-300">
+                                <tr>
+                                    <td colspan="4" class="p-4 text-center text-gray-700 italic">
+                                        Awaiting_HPI_Computation...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div id="map" class="bg-black"></div>
             </div>
         </section>
