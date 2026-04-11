@@ -40,7 +40,17 @@ export default {
       if (!postcode) return json({ error: "Missing postcode" }, 400);
 
       const ppi = await fetchPpiRows(postcode);
-      if (ppi.error) return json(ppi, 502);
+      if (ppi.error) {
+        // Do not hard-fail the whole scan for upstream PPI issues.
+        return json({
+          rows: [],
+          averagePrice: null,
+          averagePricePerSqm: null,
+          averagePricePerSqft: null,
+          warning: ppi.error,
+          detail: ppi.detail || null
+        });
+      }
 
       const epc = await fetchEpcSearch({ postcode, env });
       const rows = enrichPpiRowsWithEpc(ppi.rows.slice(0, 5), epc.rows || [], postcode);
@@ -103,9 +113,16 @@ async function fetchPpiRows(postcode) {
     LIMIT 5
   `;
 
-  const target = "https://landregistry.data.gov.uk/app/ppd/ppd_data.sparql?query=" + encodeURIComponent(sparql);
+  const target =
+    "https://landregistry.data.gov.uk/app/ppd/ppd_data.sparql?query=" +
+    encodeURIComponent(sparql) +
+    "&output=json&format=json";
   const res = await fetch(target, { headers: { Accept: "application/sparql-results+json, application/json" } });
   const raw = await safeJsonResponse(res);
+
+  if (!res.ok) {
+    return { error: "PPI_UPSTREAM_HTTP_ERROR", detail: `HTTP ${res.status}` };
+  }
 
   if (!raw?.results?.bindings) {
     return { error: "PPI_UPSTREAM_INVALID", detail: "SPARQL endpoint did not return JSON bindings" };
