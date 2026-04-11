@@ -2,16 +2,20 @@
 // Market Evidence Engine for £PER v14 (Hybrid Layout)
 
 import { state } from "../core/state.js";
+
 import {
   formatMoney,
   pricePerSqft,
-  pricePerM2FromSqft,
+  pricePerM2FromSqft
 } from "../core/utils.js";
+
 import {
   workerFetch,
-  isError,
+  isError
 } from "../core/fetcher.js";
+
 import { lookupEpcArea } from "./epc.js";
+
 
 // ---------------------------------------------------------
 // Fetch raw PPI transactions (5 most recent)

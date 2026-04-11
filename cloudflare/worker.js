@@ -1,102 +1,169 @@
-// worker.js
-// Cloudflare Worker backend for £PER v14
-//
-// Responsibilities:
-// - Generic proxy (?url=...)
-// - PPI stub endpoint (?ppi=1&postcode=...)
-// - HPI stub endpoint (?hpi=1&la=...&month=...)
-// - Schools stub endpoint (?schools=1&postcode=...)
-// - Utilities stub endpoint (?utilities=1&postcode=...)
-// - Flood stub endpoint (?flood=1&postcode=...)
-// - Radon stub endpoint (?radon=1&postcode=...)
-//
-// NOTE: External API calls are left as placeholders.
-// Replace stubs with real fetches when you’re ready.
-
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url);
-    const params = url.searchParams;
 
-    // 1) Generic proxy: ?url=...
-    const targetUrl = params.get("url");
-    if (targetUrl) {
-      return proxyRequest(targetUrl, env);
+    // --- CORS preflight ---
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      });
     }
 
-    // 2) PPI: ?ppi=1&postcode=...
-    if (params.get("ppi")) {
-      const postcode = params.get("postcode") || "";
-      return jsonResponse(mockPpi(postcode));
+    // ============================================================
+    //  EPC PROXY (unchanged — frontend uses ?url=)
+    // ============================================================
+    if (url.searchParams.has("url")) {
+      const target = url.searchParams.get("url");
+
+      const res = await fetch(target, {
+        headers: {
+          Authorization: "Basic " + env.EPC_TOKEN,
+        },
+      });
+
+      const data = await res.text();
+
+      return new Response(data, {
+        status: res.status,
+        headers: {
+          "Content-Type": res.headers.get("Content-Type") || "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
     }
 
-    // 3) HPI: ?hpi=1&la=...&month=...
-    if (params.get("hpi")) {
-      const la = params.get("la") || "";
-      const month = params.get("month") || "";
-      return jsonResponse(mockHpi(la, month));
+    // ============================================================
+    //  PPI (REAL) — v14 format: ?ppi=1&postcode=NW90AA
+    // ============================================================
+    if (url.searchParams.get("ppi") === "1") {
+      const postcode = url.searchParams.get("postcode");
+      if (!postcode) {
+        return json({ error: "Missing postcode" });
+      }
+
+      // Build Land Registry SPARQL URL (same as v13)
+      const clean = postcode.replace(/\s+/g, "").toUpperCase();
+
+      const target =
+        "https://landregistry.data.gov.uk/app/ppd/ppd_data.sparql?query=" +
+        encodeURIComponent(`
+          PREFIX lrppi: <http://landregistry.data.gov.uk/def/ppi/>
+          PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+          SELECT ?paon ?street ?amount ?date
+          WHERE {
+            ?trans lrppi:propertyAddress ?addr ;
+                    lrppi:pricePaid ?amount ;
+                    lrppi:transactionDate ?date .
+            ?addr lrppi:postcode "${clean}"^^xsd:string ;
+                  lrppi:paon ?paon ;
+                  lrppi:street ?street .
+          }
+          ORDER BY DESC(?date)
+          LIMIT 5
+        `);
+
+      const res = await fetch(target);
+      const data = await res.text();
+
+      return jsonRaw(data, res);
     }
 
-    // 4) Schools: ?schools=1&postcode=...
-    if (params.get("schools")) {
-      const postcode = params.get("postcode") || "";
-      return jsonResponse(mockSchools(postcode));
+    // ============================================================
+    //  SCHOOLS (REAL) — v14 format: ?schools=1&postcode=NW90AA
+    // ============================================================
+    if (url.searchParams.get("schools") === "1") {
+      const postcode = url.searchParams.get("postcode");
+      if (!postcode) return json({ error: "Missing postcode" });
+
+      // Build Ofsted search URL (same as v13)
+      const clean = postcode.replace(/\s+/g, "").toUpperCase();
+      const target = `https://www.compare-school-performance.service.gov.uk/schools-by-postcode?postcode=${clean}`;
+
+      const res = await fetch(target);
+      const html = await res.text();
+
+      // Extract first school block (same logic as v13)
+      const nameMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
+      const name = nameMatch ? nameMatch[1].trim() : "Unknown";
+
+      const ratingMatch = html.match(/Overall effectiveness<\/th>\s*<td[^>]*>(.*?)<\/td>/i);
+      const rating = ratingMatch ? ratingMatch[1].trim() : "Not found";
+
+      const phaseMatch = html.match(/Phase<\/th>\s*<td[^>]*>(.*?)<\/td>/i);
+      const phase = phaseMatch ? phaseMatch[1].trim() : "Unknown";
+
+      const addressMatch = html.match(/Address<\/th>\s*<td[^>]*>(.*?)<\/td>/i);
+      const address = addressMatch ? addressMatch[1].trim() : "Unknown";
+
+      return json({
+        name,
+        rating,
+        phase,
+        address,
+      });
     }
 
-    // 5) Utilities: ?utilities=1&postcode=...
-    if (params.get("utilities")) {
-      const postcode = params.get("postcode") || "";
-      return jsonResponse(mockUtilities(postcode));
+    // ============================================================
+    //  HPI (PLACEHOLDER)
+    // ============================================================
+    if (url.searchParams.get("hpi") === "1") {
+      return json({
+        factor: 1.0,
+        note: "HPI placeholder",
+      });
     }
 
-    // 6) Flood: ?flood=1&postcode=...
-    if (params.get("flood")) {
-      const postcode = params.get("postcode") || "";
-      return jsonResponse(mockFlood(postcode));
+    // ============================================================
+    //  FLOOD (PLACEHOLDER)
+    // ============================================================
+    if (url.searchParams.get("flood") === "1") {
+      return json({
+        summary: "Placeholder flood data",
+        river: "N/A",
+        surface: "N/A",
+        groundwater: "N/A",
+      });
     }
 
-    // 7) Radon: ?radon=1&postcode=...
-    if (params.get("radon")) {
-      const postcode = params.get("postcode") || "";
-      return jsonResponse(mockRadon(postcode));
+    // ============================================================
+    //  RADON (PLACEHOLDER)
+    // ============================================================
+    if (url.searchParams.get("radon") === "1") {
+      return json({
+        level: "Unknown",
+        note: "Radon placeholder",
+      });
     }
 
-    return jsonResponse({ error: "NO_ROUTE" }, 404);
+    // ============================================================
+    //  UTILITIES (PLACEHOLDER)
+    // ============================================================
+    if (url.searchParams.get("utilities") === "1") {
+      return json({
+        broadband: "Unknown",
+        water: "Unknown",
+        council: "Unknown",
+        energy: "Unknown",
+      });
+    }
+
+    // ============================================================
+    //  DEFAULT
+    // ============================================================
+    return json({ error: "Invalid request" }, 400);
   },
 };
 
-// -----------------------------
-// Generic proxy (for EPC, etc.)
-// -----------------------------
-async function proxyRequest(targetUrl, env) {
-  try {
-    const res = await fetch(targetUrl, {
-      headers: {
-        // Example for EPC:
-        // Authorization: "Basic " + env.EPC_API_KEY,
-      },
-    });
-
-    const text = await res.text();
-    return new Response(text, {
-      status: res.status,
-      headers: {
-        "Content-Type": res.headers.get("Content-Type") || "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
-  } catch (err) {
-    return jsonResponse(
-      { error: "PROXY_ERROR", message: err.message || "Proxy failed" },
-      500
-    );
-  }
-}
-
-// -----------------------------
+// ------------------------------------------------------------
 // Helpers
-// -----------------------------
-function jsonResponse(obj, status = 200) {
+// ------------------------------------------------------------
+function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
     headers: {
@@ -106,130 +173,12 @@ function jsonResponse(obj, status = 200) {
   });
 }
 
-// -----------------------------
-// STUB IMPLEMENTATIONS
-// Replace with real APIs later
-// -----------------------------
-
-// PPI: returns 5 fake transactions
-function mockPpi(postcode) {
-  const today = new Date();
-  const iso = (offsetMonths) => {
-    const d = new Date(today);
-    d.setMonth(d.getMonth() - offsetMonths);
-    return d.toISOString();
-  };
-
-  return {
-    transactions: [
-      {
-        date: iso(1),
-        paon: "10",
-        street: "Example Road",
-        amount: 450000,
-      },
-      {
-        date: iso(3),
-        paon: "12",
-        street: "Example Road",
-        amount: 470000,
-      },
-      {
-        date: iso(5),
-        paon: "8",
-        street: "Example Road",
-        amount: 440000,
-      },
-      {
-        date: iso(7),
-        paon: "6",
-        street: "Example Road",
-        amount: 430000,
-      },
-      {
-        date: iso(9),
-        paon: "4",
-        street: "Example Road",
-        amount: 420000,
-      },
-    ],
-  };
-}
-
-// HPI: returns a simple factor
-function mockHpi(localAuthority, month) {
-  return {
-    saleHPI: 100,
-    todayHPI: 115,
-    factor: 1.15,
-    region: localAuthority || "Mock Region",
-    saleMonth: month || "2024-01",
-    todayMonth: "2026-04",
-  };
-}
-
-// Schools: 3 fake schools
-function mockSchools(postcode) {
-  return {
-    schools: [
-      {
-        name: "Example Primary School",
-        rating: "Outstanding",
-        category: "Primary",
-        distance_text: "0.3 miles",
-      },
-      {
-        name: "Example Secondary School",
-        rating: "Good",
-        category: "Secondary",
-        distance_text: "0.8 miles",
-      },
-      {
-        name: "Example Academy",
-        rating: "Requires Improvement",
-        category: "All-through",
-        distance_text: "1.2 miles",
-      },
-    ],
-  };
-}
-
-// Utilities: simple mock bundle
-function mockUtilities(postcode) {
-  return {
-    broadband: {
-      tech: "FTTP",
-      maxDown: "900 Mbps",
-      providers: ["BT", "Sky", "Virgin Media"],
+function jsonRaw(text, res) {
+  return new Response(text, {
+    status: res.status,
+    headers: {
+      "Content-Type": res.headers.get("Content-Type") || "application/json",
+      "Access-Control-Allow-Origin": "*",
     },
-    water: {
-      water: "Thames Water",
-      sewerage: "Thames Water",
-    },
-    councilTax: {
-      band: "D",
-      authority: "Mock Borough Council",
-    },
-    energy: {
-      region: "London",
-    },
-  };
-}
-
-// Flood: simple mock
-function mockFlood(postcode) {
-  return {
-    summary: "Low risk",
-    river: "Very low",
-    surface: "Low",
-    groundwater: "N/A",
-  };
-}
-
-// Radon: simple mock
-function mockRadon(postcode) {
-  return {
-    band: "1-3%",
-    percentage: "1-3%",
-  };
+  });
 }

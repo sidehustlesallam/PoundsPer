@@ -3,7 +3,7 @@
 
 import { state } from "../core/state.js";
 import { formatMoney } from "../core/utils.js";
-import { renderMap } from "./map.js";
+import { initMap } from "./map.js";
 
 // ---------------------------------------------------------
 // Helper: safely set innerHTML

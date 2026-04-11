@@ -1,19 +1,21 @@
 // src/modules/epc.js
 // EPC search, detail, and area lookup for £PER v14
-
 import { state } from "../core/state.js";
-import {
-  cleanPostcode,
-  m2ToSqft,
-} from "../core/utils.js";
+
 import {
   epcSearchByPostcode,
   epcSearchByUprn,
   epcFetchCertificate,
   isError,
+  ensureArray
 } from "../core/fetcher.js";
 
-// ---------------------------------------------------------
+import {
+  cleanPostcode,
+  m2ToSqft
+} from "../core/utils.js";
+
+//-----------------------
 // Normalise EPC certificate into a clean, predictable object
 // ---------------------------------------------------------
 export function normaliseEpc(epcRaw) {

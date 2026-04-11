@@ -2,13 +2,14 @@
 // Orchestrator for £PER v14 (Hybrid Layout)
 
 import { state, resetState } from "./core/state.js";
-import { normaliseEpc, fetchEpcDetail, searchEpcByPostcode } from "./modules/epc.js";
+import { searchEpcByPostcode, fetchEpcDetail, normaliseEpc } from "./modules/epc.js";
 import { fetchPpi, enrichPpiWithAreas, applyHpiAdjustments, computeMarketAverages } from "./modules/ppi.js";
 import { fetchSchools } from "./modules/schools.js";
 import { fetchFloodRisk, fetchRadonRisk } from "./modules/risk.js";
 import { fetchUtilities } from "./modules/utilities.js";
 import { renderAll } from "./modules/render.js";
 import { initMap } from "./modules/map.js";
+
 
 // -----------------------------
 // DOM helpers
