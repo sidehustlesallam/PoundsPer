@@ -48,7 +48,7 @@ export async function workerFetch(params = {}) {
 }
 
 // ---------------------------------------------
-// EPC fetch helpers
+// EPC fetch helpers (FIXED: now uses /api/v1/...)
 // ---------------------------------------------
 export async function epcSearchByPostcode(postcode) {
   const clean = postcode.replace(/\s+/g, "").toUpperCase();
