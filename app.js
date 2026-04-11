@@ -1,10 +1,8 @@
-// app.js
 /**
- * £Per Audit Engine v13.1
- * - EPC detail (lat/lon + LA)
- * - PPI (5 most recent) enriched with EPC area via postcode-only + PAON match
- * - AREA_AVG + HPI tables
- * - Single MapLibre marker
+ * £Per Audit Engine v13.2
+ * - Correct £/m² conversion (real + HPI tables)
+ * - HPI uses EPC local authority reliably
+ * - MapLibre guarded so map failure doesn’t break audit
  */
 
 const PROXY_URL = "https://lingering-snow-ccff.sidehustlesallam.workers.dev/";
@@ -84,7 +82,7 @@ function normalizeEpc(epcRaw) {
     rating: epc["current-energy-rating"] || "?",
     latitude: lat,
     longitude: lon,
-    localAuthority: epc["local-authority-label"] || null,
+    localAuthority: epc["local-authority-label"] || epc["local-authority"] || null,
   };
 }
 
@@ -381,7 +379,7 @@ async function computeHpiTables(enrichedTxs, laName) {
 
     if (countAdjArea > 0) {
       const avgAdjPpSqft = totalAdjPpSqft / countAdjArea;
-      const avgAdjPpM2 = avgAdjPpSqft / 10.764;
+      const avgAdjPpM2 = avgAdjPpSqft * 10.764; // ✅ FIXED
       if (hpiAreaAvg)
         hpiAreaAvg.innerText = `£${Math.round(
           avgAdjPpSqft
@@ -425,8 +423,10 @@ async function loadMarketData(pc) {
     }
 
     const state = window.__PER_STATE__;
-    const laName = state.epcDetail?.["local-authority-label"] || null;
-    const mainPostcode = state.epc?.postcode || pc;
+    const laName =
+      state.epc?.localAuthority ||
+      state.epcDetail?.["local-authority-label"] ||
+      null;
 
     let totalPrice = 0;
     let totalPpSqft = 0;
@@ -440,7 +440,7 @@ async function loadMarketData(pc) {
       let areaSqft = null;
 
       try {
-        const area = await lookupEpcAreaFromPostcode(t.paon, mainPostcode);
+        const area = await lookupEpcAreaFromPostcode(t.paon, pc);
         if (area) {
           areaSqm = area.sqm;
           areaSqft = area.sqft;
@@ -487,7 +487,7 @@ async function loadMarketData(pc) {
 
     if (countWithArea > 0) {
       const avgPpSqft = totalPpSqft / countWithArea;
-      const avgPpM2 = avgPpSqft / 10.764;
+      const avgPpM2 = avgPpSqft * 10.764; // ✅ FIXED
       if (areaMetric)
         areaMetric.innerText = `£${Math.round(
           avgPpSqft
@@ -513,6 +513,11 @@ async function loadMarketData(pc) {
 // MAP
 function initMap(epc) {
   if (!epc || epc.latitude == null || epc.longitude == null) return;
+  if (typeof maplibregl === "undefined") {
+    console.warn("MapLibre not available; skipping map init");
+    return;
+  }
+
   const state = window.__PER_STATE__;
 
   if (!state.map) {
