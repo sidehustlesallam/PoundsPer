@@ -1,19 +1,29 @@
-// src/app.js
-// Orchestrator for £PER v14 (Hybrid Layout)
+// app.js — £PER v14 Orchestrator (v26)
 
-import { state, resetState } from "./core/state.js";
-import { searchEpcByPostcode, fetchEpcDetail, normaliseEpc } from "./modules/epc.js";
-import { fetchPpi, enrichPpiWithAreas, applyHpiAdjustments, computeMarketAverages } from "./modules/ppi.js";
-import { fetchSchools } from "./modules/schools.js";
-import { fetchFloodRisk, fetchRadonRisk } from "./modules/risk.js";
-import { fetchUtilities } from "./modules/utilities.js";
-import { renderAll } from "./modules/render.js";
-import { initMap } from "./modules/map.js";
+import { state, resetState } from "./core/state.js?v=26";
 
+import { 
+  getEpcForPostcode,
+  getEpcCertificate,
+  pickEpcRow
+} from "./modules/epc.js?v=26";
 
-// -----------------------------
+import { 
+  fetchPpi,
+  enrichPpiWithAreas,
+  applyHpiAdjustments,
+  computeMarketAverages
+} from "./modules/ppi.js?v=26";
+
+import { fetchSchools } from "./modules/schools.js?v=26";
+import { fetchFloodRisk, fetchRadonRisk } from "./modules/risk.js?v=26";
+import { fetchUtilities } from "./modules/utilities.js?v=26";
+import { renderAll } from "./modules/render.js?v=26";
+import { initMap } from "./modules/map.js?v=26";
+
+// -------------------------------------------------------
 // DOM helpers
-// -----------------------------
+// -------------------------------------------------------
 function $(id) {
   return document.getElementById(id);
 }
@@ -23,84 +33,81 @@ function setText(id, text) {
   if (el) el.textContent = text;
 }
 
-// -----------------------------
-// Main scan flow
-// -----------------------------
+// -------------------------------------------------------
+// MAIN SCAN FLOW (EPC-FIRST → POSTCODE FALLBACK)
+// -------------------------------------------------------
 async function scanProperty(postcode) {
   resetState();
   setText("status", "Scanning…");
 
-  // 1) EPC search by postcode → pick best match (for now: first row)
-  const epcRows = await searchEpcByPostcode(postcode);
-  if (epcRows.error || !epcRows.length) {
-    setText("status", "No EPC found for this postcode");
-    return;
+  // ---------------------------------------------------
+  // 1) EPC-FIRST
+  // ---------------------------------------------------
+  const epcResult = await getEpcForPostcode(postcode);
+
+  if (epcResult.error) {
+    console.error("EPC error:", epcResult.error);
   }
 
-  const first = epcRows[0];
-  const detail = await fetchEpcDetail(first.rrn);
-  state.epcDetail = detail;
-  state.epc = normaliseEpc(detail);
+  const rows = epcResult.rows;
 
-  // Init map early
+  // ---------------------------------------------------
+  // 2) If EPC rows exist → pick first row + fetch cert
+  // ---------------------------------------------------
+  if (rows.length > 0) {
+    const first = pickEpcRow(rows, 0);
+    if (first && first.rrn) {
+      const certRes = await getEpcCertificate(first.rrn);
+
+      if (!certRes.error) {
+        state.epcDetail = certRes.epc;
+        state.epc = certRes.epc;
+      }
+    }
+  } else {
+    // ---------------------------------------------------
+    // 3) EPC fallback: no EPC → continue with postcode only
+    // ---------------------------------------------------
+    console.warn("No EPC found — using postcode fallback");
+    state.epc = null;
+    state.epcDetail = null;
+  }
+
+  // ---------------------------------------------------
+  // 4) Init map early (if EPC has coords, map will center)
+  // ---------------------------------------------------
   initMap("map");
 
-  // 2) PPI fetch
+  // ---------------------------------------------------
+  // 5) PPI
+  // ---------------------------------------------------
   await fetchPpi(postcode);
-
-  // 3) Enrich PPI with EPC areas
   await enrichPpiWithAreas(postcode);
 
-  // 4) Apply HPI adjustments (if we have LA)
+  // ---------------------------------------------------
+  // 6) HPI adjustments (only if EPC has LA)
+  // ---------------------------------------------------
   if (state.epc && state.epc.localAuthority) {
     await applyHpiAdjustments(state.epc.localAuthority);
   }
 
-  // 5) Compute market averages (for future use / header)
+  // ---------------------------------------------------
+  // 7) Market averages
+  // ---------------------------------------------------
   const avgs = computeMarketAverages();
   console.log("Market averages:", avgs);
 
-  // 6) Schools
+  // ---------------------------------------------------
+  // 8) Schools
+  // ---------------------------------------------------
   await fetchSchools(postcode);
 
-  // 7) Utilities
+  // ---------------------------------------------------
+  // 9) Utilities
+  // ---------------------------------------------------
   await fetchUtilities(postcode);
 
-  // 8) Risk
-  await fetchFloodRisk(postcode);
-  await fetchRadonRisk(postcode);
-
-  // 9) Render everything
-  renderAll();
-  setText("status", "Scan complete");
-}
-
-// -----------------------------
-// Wire up UI
-// -----------------------------
-function initApp() {
-  const form = $("search-form");
-  const input = $("postcode-input");
-
-  if (!form || !input) {
-    console.error("Form or input not found");
-    return;
-  }
-
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const postcode = input.value.trim();
-    if (!postcode) return;
-    scanProperty(postcode);
-  });
-
-  // Optional: auto-focus input
-  input.focus();
-}
-
-// -----------------------------
-// Boot
-// -----------------------------
-document.addEventListener("DOMContentLoaded", () => {
-  initApp();
-});
+  // ---------------------------------------------------
+  // 10) Risk
+  // ---------------------------------------------------
+  await fetch

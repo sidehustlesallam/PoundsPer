@@ -1,19 +1,15 @@
-// src/core/fetcher.js
-// Unified network layer for £PER v14 (Hybrid Layout)
+// src/core/fetcher.js — £PER v14 Structured Network Layer (v26)
 
-import { safeJson } from "./utils.js";
+import { safeJson } from "./utils.js?v=26";
 
-// ---------------------------------------------
+// -------------------------------------------------------
 // CONFIG
-// ---------------------------------------------
+// -------------------------------------------------------
 const WORKER_BASE = "https://lingering-snow-ccff.sidehustlesallam.workers.dev";
 
-// EPC API base (always proxied through Worker)
-const EPC_BASE = "https://epc.opendatacommunities.org/api/v1";
-
-// ---------------------------------------------
+// -------------------------------------------------------
 // Low-level fetch wrapper
-// ---------------------------------------------
+// -------------------------------------------------------
 async function rawFetch(url, options = {}) {
   try {
     const res = await fetch(url, options);
@@ -30,45 +26,43 @@ async function rawFetch(url, options = {}) {
   }
 }
 
-// ---------------------------------------------
-// Proxy fetch (for EPC + external APIs)
-// ---------------------------------------------
-export async function proxyFetch(targetUrl) {
-  const url = `${WORKER_BASE}?url=${encodeURIComponent(targetUrl)}`;
-  return await rawFetch(url);
-}
-
-// ---------------------------------------------
-// Worker fetch (for PPI, HPI, Schools, Risk, Utilities)
-// ---------------------------------------------
+// -------------------------------------------------------
+// Structured Worker fetch
+// -------------------------------------------------------
 export async function workerFetch(params = {}) {
   const qs = new URLSearchParams(params).toString();
   const url = `${WORKER_BASE}?${qs}`;
   return await rawFetch(url);
 }
 
-// ---------------------------------------------
-// EPC fetch helpers (FIXED: now uses /api/v1/...)
-// ---------------------------------------------
+// -------------------------------------------------------
+// EPC helpers (structured Worker API)
+// -------------------------------------------------------
 export async function epcSearchByPostcode(postcode) {
   const clean = postcode.replace(/\s+/g, "").toUpperCase();
-  const url = `${EPC_BASE}/domestic/search?postcode=${clean}`;
-  return await proxyFetch(url);
+  return await workerFetch({
+    epc: "search",
+    postcode: clean
+  });
 }
 
 export async function epcSearchByUprn(uprn) {
-  const url = `${EPC_BASE}/domestic/search?uprn=${uprn}`;
-  return await proxyFetch(url);
+  return await workerFetch({
+    epc: "search",
+    uprn
+  });
 }
 
 export async function epcFetchCertificate(rrn) {
-  const url = `${EPC_BASE}/domestic/certificate/${encodeURIComponent(rrn)}`;
-  return await proxyFetch(url);
+  return await workerFetch({
+    epc: "certificate",
+    rrn
+  });
 }
 
-// ---------------------------------------------
-// Response normalisation helpers
-// ---------------------------------------------
+// -------------------------------------------------------
+// Response helpers
+// -------------------------------------------------------
 export function isError(res) {
   return res && typeof res === "object" && "error" in res;
 }
