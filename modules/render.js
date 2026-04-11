@@ -1,4 +1,4 @@
-// src/modules/render.js — £PER v14 Render Module (v26)
+// src/modules/render.js — £PER v14 Render Module (v27)
 
 import { state } from "../core/state.js?v=26";
 
@@ -9,6 +9,11 @@ function $(id) {
 function setText(id, text) {
   const el = $(id);
   if (el) el.textContent = text ?? "";
+}
+
+function money(value) {
+  if (value == null || Number.isNaN(value)) return "N/A";
+  return `£${Number(value).toLocaleString()}`;
 }
 
 export function renderAll() {
@@ -33,31 +38,55 @@ function renderEpc() {
 }
 
 function renderPpi() {
-  if (!state.market || state.market.mid == null) {
-    setText("ppi-summary", "No PPI data available.");
+  const el = $("market-evidence");
+  if (!el) return;
+
+  if (!state.ppi || !state.ppi.rows || state.ppi.rows.length === 0) {
+    el.textContent = "No recent sales evidence available.";
     return;
   }
-  setText("ppi-summary", `Estimated median value: £${state.market.mid.toLocaleString()}`);
+
+  const rows = state.ppi.rows
+    .map((r) => `${r.date || "Unknown date"}: ${r.paon || ""} ${r.street || ""} — ${money(r.amount)}`)
+    .join("\n");
+
+  const median = state.market?.mid != null ? `\nMedian: ${money(state.market.mid)}` : "";
+  el.textContent = `${rows}${median}`;
 }
 
 function renderSchools() {
-  if (!state.schools) {
-    setText("schools-summary", "No schools data yet.");
+  const el = $("schools");
+  if (!el) return;
+
+  if (!state.schools || state.schools.error) {
+    el.textContent = "No schools data available.";
     return;
   }
-  setText("schools-summary", "Schools data loaded.");
+
+  const name = state.schools.name || "Unknown";
+  const rating = state.schools.rating || "Not found";
+  const phase = state.schools.phase || "Unknown";
+  el.textContent = `${name} · ${phase} · ${rating}`;
 }
 
 function renderRisk() {
-  const flood = state.flood ? "Flood data loaded" : "No flood data";
-  const radon = state.radon ? "Radon data loaded" : "No radon data";
-  setText("risk-summary", `${flood} · ${radon}`);
+  const el = $("risk");
+  if (!el) return;
+
+  const flood = state.flood?.summary || state.flood?.error || "No flood data";
+  const radon = state.radon?.level || state.radon?.error || "No radon data";
+  el.textContent = `Flood: ${flood} | Radon: ${radon}`;
 }
 
 function renderUtilities() {
-  if (!state.utilities) {
-    setText("utilities-summary", "No utilities data yet.");
+  const el = $("utilities");
+  if (!el) return;
+
+  if (!state.utilities || state.utilities.error) {
+    el.textContent = "No utilities data available.";
     return;
   }
-  setText("utilities-summary", "Utilities data loaded.");
+
+  const u = state.utilities;
+  el.textContent = `Broadband: ${u.broadband || "Unknown"}, Water: ${u.water || "Unknown"}, Council: ${u.council || "Unknown"}`;
 }
