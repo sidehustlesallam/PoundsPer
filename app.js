@@ -5,7 +5,7 @@
  *   by calling functions from core/engine.js.
  */
 
-import { handleDiscovery, selectAddress, populateAddressDropdown } from './core/engine.js';
+import { handleDiscovery, selectAddress } from './core/engine.js';
 
 // --- GLOBAL STATE ---
 window.__PER_STATE__ = {
@@ -64,25 +64,6 @@ function setEpcState(state, meta = "") {
   } else if (state === "ready") {
     if (metaEl && meta) metaEl.innerText = meta;
   }
-}
-
-/**
- * Populates the address dropdown with potential addresses found.
- * @param {Array} addresses - Array of address objects.
- */
-function populateAddressDropdown(addresses) {
-  const dropdown = document.getElementById("addressDropdown");
-  if (!dropdown) return;
-
-  // Clear existing options
-  dropdown.innerHTML = '<option value="">-- SELECT ADDRESS --</option>';
-
-  addresses.forEach((addr, index) => {
-    const option = document.createElement("option");
-    option.value = index;
-    option.textContent = `${addr.address || "Unknown Address"} (${addr.postcode || "N/A"})`;
-    dropdown.appendChild(option);
-  });
 }
 
 // --- GENERIC PROXY FETCH ---
