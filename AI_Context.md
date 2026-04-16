@@ -6,10 +6,12 @@ PoundsPer is a unified, postcode-driven property intelligence scanning platform 
 ### 💡 Core Functionality
 The system accepts a UK postcode as input and synthesizes data from multiple specialized sources to provide a comprehensive overview of a property's:
 1. **Condition:** Energy Performance Certificates (EPC).
-2. **Value Context:** Property Price Index (PPI) and House Price Index (HPI), as well as breakdown by price per square foot and metre.
+2. **Sold prices:** Property Price Index (PPI)  as well as breakdown by price per square foot and metre.
+3. **Market Trends:** using PPI output to estimate current value of recently sold properties, based on HPI in local area, to give average price per square foot and metre.
 3. **Local Amenities:** Local school data, showing closest three schools with OFSTED rating for each
 4. **Environmental Factors:** Environmental risks (e.g., flood and radon).
 5. **Utilities:** Household utility information, such as fastest expected broadband speed.
+6. **Map:** A map of the property's location based on address/UPRN.
 
 
 ### 📂 Repository Structure & Module Roles
