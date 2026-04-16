@@ -21,9 +21,9 @@ function jsonResponse(body, status = 200) {
 function cleanText(str) {
   if (!str) return "";
   return str
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/&/g, "&")
+    .replace(/"/g, '"')
+    .replace(/'/g, "'")
     .replace(/<[^>]*>/g, "")
     .trim();
 }

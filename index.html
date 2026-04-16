@@ -7,7 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
-    <script src="app.js" defer></script>
+    <!-- Load the main application script as the single entry point -->
+    <script type="module" src="app.js" defer></script>
     <style>
         @import url("https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;900&display=swap");
         :root {
@@ -24,7 +25,7 @@
             margin: 0;
             overflow-x: hidden;
             background-image: linear-gradient(#0b1020 1px, transparent 1px),
-                              linear-gradient(90deg, #0b1020 1px, transparent 1px);
+                               linear-gradient(90deg, #0b1020 1px, transparent 1px);
             background-size: 32px 32px;
         }
         .data-mono { font-family: "Roboto Mono", monospace; }
@@ -103,7 +104,7 @@
                     class="flex-grow px-5 py-4 text-sm rounded-sm outline-none transition-colors"
                 />
                 <button
-                    onclick="handleDiscovery()"
+                    id="executeScanButton"
                     class="bg-sky-50 hover:bg-sky-100 text-black px-10 py-4 rounded-sm text-xs font-black uppercase tracking-[0.2em] transition-all active:scale-95 border border-sky-200"
                 >
                     Execute_Scan
@@ -116,7 +117,6 @@
             >
                 <select
                     id="addressDropdown"
-                    onchange="selectAddress()"
                     class="w-full p-3 text-xs focus:outline-none rounded-sm cursor-pointer bg-black/80"
                 >
                     <option value="">-- RESOLVING MULTIPLE ADDRESSES --</option>
@@ -134,11 +134,13 @@
                     >--</h2>
                     <div class="flex flex-wrap gap-6 pt-2 data-mono text-[11px]">
                         <div>
-                            <span class="text-gray-600">UPRN:</span>
+                            <span class="text-gray-600">UPRN:</span
+                            >
                             <span id="displayUprn" class="text-sky-400 font-bold tracking-widest">--</span>
                         </div>
                         <div>
-                            <span class="text-gray-600">INTERNAL_AREA:</span>
+                            <span class="text-gray-600">INTERNAL_AREA:</span
+                            >
                             <span id="sqftMetric" class="text-white font-bold">--</span>
                         </div>
                     </div>
@@ -161,11 +163,13 @@
                     <div class="audit-header mb-2">Environmental Risk Envelope</div>
                     <div class="space-y-3 data-mono text-[11px]">
                         <div class="flex justify-between items-center py-2 border-b border-gray-900/50">
-                            <span class="text-gray-500">FLOOD_DATA:</span>
+                            <span class="text-gray-500">FLOOD_DATA:</span
+                            >
                             <span id="floodStatus" class="font-bold indicator-green">Low_Risk</span>
                         </div>
                         <div class="flex justify-between items-center py-2 border-b border-gray-900/50">
-                            <span class="text-gray-500">RADON_RISK:</span>
+                            <span class="text-gray-500">RADON_RISK:</span
+                            >
                             <span id="radonStatus" class="indicator-green font-bold uppercase">Stable</span>
                         </div>
                         <div class="text-[9px] text-gray-500 leading-relaxed">
