@@ -118,13 +118,16 @@ async function handleDiscovery(input, state, updateStatus, safeFetch, modules) {
       `https://epc.opendatacommunities.org/api/v1/domestic/search?postcode=${pcMatch[0].replace(/\s/g, "")}`
     );
 
-    if (data?.rows?.length > 0) {
+    // --- CRITICAL FIX: Robust data validation for address population ---
+    if (data && data.rows && Array.isArray(data.rows) && data.rows.length > 0) {
       // Store all potential addresses in the state
       state.potentialAddresses = data.rows;
       // Populate the address selector (UI logic)
       populateAddressDropdown(data.rows);
       updateStatus("CHOOSE_ADDRESS", "success");
     } else {
+      // Log the raw data for debugging if the expected structure is missing
+      console.error("EPC API returned data, but 'rows' array was missing or empty. Raw data:", data);
       updateStatus("NO_DATA", "error");
       state.epcError = "NO_EPC_FOR_POSTCODE";
     }
