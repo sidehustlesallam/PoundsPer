@@ -1,323 +1,298 @@
+/**
+ * £Per Worker v12.0
+ * - EPC: tolerant proxy
+ * - PPI: Land Registry SPARQL (POST support)
+ * - Schools: Ofsted HTML scrape (User-Agent fix)
+ * - Flood / Radon: env-configurable upstream APIs
+ * - KV-backed caching for stability
+ */
+
+const jsonHeaders = {
+  "Content-Type": "application/json; charset=utf-8",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+};
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
+}
+
+function cleanText(str) {
+  if (!str) return "";
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/<[^>]*>/g, "")
+    .trim();
+}
+
+// --- KV CACHING HELPER ---
+async function cachedJson(env, key, ttlSeconds, fetcher) {
+  const kv = env.CACHE;
+  if (kv) {
+    const cached = await kv.get(key);
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch {
+        // fall through
+      }
+    }
+  }
+
+  const fresh = await fetcher();
+  if (kv && fresh && !fresh.error) {
+    await kv.put(key, JSON.stringify(fresh), { expirationTtl: ttlSeconds });
+  }
+  return fresh;
+}
+
+// --- SCHOOLS MODULE: OFSTED SCRAPE ---
+async function handleSchoolsRequest(url, env) {
+  const postcode = url.searchParams.get("postcode");
+  if (!postcode) return jsonResponse({ error: "POSTCODE_REQUIRED" }, 400);
+
+  const cleanPc = postcode.replace(/\s+/g, "").toUpperCase();
+  const cacheKey = `schools:${cleanPc}`;
+
+  const result = await cachedJson(env, cacheKey, 6 * 60 * 60, async () => {
+    const searchUrl = `https://reports.ofsted.gov.uk/search?q=&location=${encodeURIComponent(
+      cleanPc
+    )}&radius=3&status%5B%5D=1`;
+
+    try {
+      const res = await fetch(searchUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      });
+      const html = await res.text();
+
+      const results = [];
+      const liRegex = /<li class="search-result">([\s\S]*?)<\/li>/g;
+      let match;
+
+      while ((match = liRegex.exec(html)) !== null) {
+        const block = match[1];
+        const nameMatch = block.match(
+          /<h3[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/
+        );
+        const ratingMatch = block.match(
+          /Rating:\s*<strong>([\s\S]*?)<\/strong>/
+        );
+        const catMatch = block.match(
+          /Category:\s*<strong>([\s\S]*?)<\/strong>/
+        );
+        const distMatch = block.match(
+          /<strong[^>]*class="address-distance"[^>]*>([\s\S]*?)<\/strong>/
+        );
+
+        if (nameMatch) {
+          results.push({
+            name: cleanText(nameMatch[1]),
+            rating: ratingMatch ? cleanText(ratingMatch[1]) : "NOT_RATED",
+            category: catMatch ? cleanText(catMatch[1]) : "SCHOOL",
+            distance_text: distMatch ? cleanText(distMatch[1]) : "N/A",
+          });
+        }
+      }
+      return { schools: results };
+    } catch (e) {
+      return { error: "SCRAPE_EXCEPTION", message: e.message };
+    }
+  });
+
+  return jsonResponse(result);
+}
+
+// --- PPI MODULE: LAND REGISTRY SPARQL ---
+async function handlePpiRequest(url, env) {
+  const postcode = url.searchParams.get("postcode");
+  if (!postcode) return jsonResponse({ error: "POSTCODE_REQUIRED" }, 400);
+
+  const clean = postcode.replace(/\s+/g, "").toUpperCase();
+  const spacedPc = clean.slice(0, -3) + " " + clean.slice(-3);
+  const cacheKey = `ppi:${spacedPc}`;
+
+  const result = await cachedJson(env, cacheKey, 24 * 60 * 60, async () => {
+    const sparql = `
+      prefix lrppi: <http://landregistry.data.gov.uk/def/ppi/>
+      prefix skos: <http://www.w3.org/2004/02/skos/core#>
+      prefix lrcommon: <http://landregistry.data.gov.uk/def/common/>
+      SELECT ?paon ?street ?amount ?date ?category
+      WHERE {
+        VALUES ?postcode {"${spacedPc}"^^<http://www.w3.org/2001/XMLSchema#string>}
+        ?addr lrcommon:postcode ?postcode.
+        ?transx lrppi:propertyAddress ?addr ;
+                lrppi:pricePaid ?amount ;
+                lrppi:transactionDate ?date ;
+                lrppi:transactionCategory/skos:prefLabel ?category.
+        OPTIONAL {?addr lrcommon:paon ?paon}
+        OPTIONAL {?addr lrcommon:street ?street}
+      } ORDER BY DESC(?date) LIMIT 10`;
+
+    const res = await fetch(
+      "https://landregistry.data.gov.uk/landregistry/query",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/sparql-query",
+          Accept: "application/sparql-results+json",
+          "User-Agent": "Mozilla/5.0",
+        },
+        body: sparql,
+      }
+    );
+
+    const json = await res.json();
+    const transactions = (json.results?.bindings || []).map((b) => ({
+      paon: b.paon?.value || "",
+      street: b.street?.value || "",
+      amount: parseFloat(b.amount?.value) || 0,
+      date: b.date?.value || "",
+      category: b.category?.value || "",
+    }));
+
+    return { transactions };
+  });
+
+  return jsonResponse(result);
+}
+
+// --- FLOOD MODULE (ENV-CONFIGURABLE) ---
+async function handleFloodRequest(url, env) {
+  const postcode = url.searchParams.get("postcode");
+  if (!postcode) return jsonResponse({ error: "POSTCODE_REQUIRED" }, 400);
+
+  const cleanPc = postcode.replace(/\s+/g, "").toUpperCase();
+  const cacheKey = `flood:${cleanPc}`;
+
+  const result = await cachedJson(env, cacheKey, 12 * 60 * 60, async () => {
+    const base = env.FLOOD_API_BASE || "";
+    if (!base) {
+      return {
+        error: "FLOOD_API_NOT_CONFIGURED",
+        risk_band: "UNKNOWN",
+        source: "ENV_NOT_SET",
+      };
+    }
+
+    try {
+      const res = await fetch(`${base}?postcode=${encodeURIComponent(cleanPc)}`, {
+        headers: {
+          "User-Agent": "£PER-Flood-Worker",
+          "Accept": "application/json",
+          ...(env.FLOOD_API_KEY ? { Authorization: `Bearer ${env.FLOOD_API_KEY}` } : {}),
+        },
+      });
+      const json = await res.json();
+
+      // Expecting upstream to return something like { risk: "LOW" | "MEDIUM" | "HIGH" }
+      const raw = (json.risk || json.risk_band || "UNKNOWN").toString().toUpperCase();
+      let band = "UNKNOWN";
+      if (raw.includes("LOW")) band = "LOW";
+      else if (raw.includes("MEDIUM") || raw.includes("MODERATE")) band = "MEDIUM";
+      else if (raw.includes("HIGH") || raw.includes("SIGNIFICANT")) band = "HIGH";
+
+      return {
+        risk_band: band,
+        raw,
+        source: "FLOOD_API",
+      };
+    } catch (e) {
+      return { error: "FLOOD_EXCEPTION", message: e.message, risk_band: "UNKNOWN" };
+    }
+  });
+
+  return jsonResponse(result);
+}
+
+// --- RADON MODULE (ENV-CONFIGURABLE) ---
+async function handleRadonRequest(url, env) {
+  const postcode = url.searchParams.get("postcode");
+  if (!postcode) return jsonResponse({ error: "POSTCODE_REQUIRED" }, 400);
+
+  const cleanPc = postcode.replace(/\s+/g, "").toUpperCase();
+  const cacheKey = `radon:${cleanPc}`;
+
+  const result = await cachedJson(env, cacheKey, 12 * 60 * 60, async () => {
+    const base = env.RADON_API_BASE || "";
+    if (!base) {
+      return {
+        error: "RADON_API_NOT_CONFIGURED",
+        band: "UNKNOWN",
+        source: "ENV_NOT_SET",
+      };
+    }
+
+    try {
+      const res = await fetch(`${base}?postcode=${encodeURIComponent(cleanPc)}`, {
+        headers: {
+          "User-Agent": "£PER-Radon-Worker",
+          "Accept": "application/json",
+          ...(env.RADON_API_KEY ? { Authorization: `Bearer ${env.RADON_API_KEY}` } : {}),
+        },
+      });
+      const json = await res.json();
+
+      // Expecting upstream to return something like { band: 1|2|3 } or "LOW/MEDIUM/HIGH"
+      const raw = (json.band || json.risk || "UNKNOWN").toString().toUpperCase();
+      let band = "UNKNOWN";
+      if (raw.includes("1") || raw.includes("LOW")) band = "BAND_1";
+      else if (raw.includes("2") || raw.includes("MEDIUM")) band = "BAND_2";
+      else if (raw.includes("3") || raw.includes("HIGH")) band = "BAND_3";
+
+      return {
+        band,
+        raw,
+        source: "RADON_API",
+      };
+    } catch (e) {
+      return { error: "RADON_EXCEPTION", message: e.message, band: "UNKNOWN" };
+    }
+  });
+
+  return jsonResponse(result);
+}
+
+// --- PROXY MODULE: EPC ---
+async function handleProxyRequest(url, env) {
+  const target = url.searchParams.get("url");
+  if (!target) return jsonResponse({ error: "URL_REQUIRED" }, 400);
+
+  const headers = { Accept: "application/json" };
+  if (target.includes("epc.opendatacommunities.org") && env.EPC_TOKEN) {
+    headers["Authorization"] = `Basic ${env.EPC_TOKEN}`;
+  }
+
+  const res = await fetch(target, { headers });
+  const text = await res.text();
+
+  try {
+    return jsonResponse(JSON.parse(text), res.status);
+  } catch {
+    return new Response(text, { status: res.status, headers: jsonHeaders });
+  }
+}
+
+// --- MAIN ROUTER ---
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders() });
-    }
-    if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
-
-    if (url.searchParams.has("url")) {
-      const target = url.searchParams.get("url");
-      if (!target) return json({ error: "Missing target url" }, 400);
-      try {
-        const res = await fetch(target, { headers: { Authorization: "Basic " + env.EPC_TOKEN } });
-        return withCors(new Response(await res.text(), { status: res.status, headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" } }));
-      } catch (e) {
-        console.error("[worker] Error fetching external URL:", e);
-        return json({ error: "External fetch failed", message: e.message }, 500);
-      }
+      return new Response(null, { status: 204, headers: jsonHeaders });
     }
 
-    if (url.searchParams.get("epc") === "search") {
-      const postcode = normPostcode(url.searchParams.get("postcode"));
-      const uprn = (url.searchParams.get("uprn") || "").trim();
-      if (!postcode && !uprn) return json({ error: "Missing postcode or uprn" }, 400);
+    if (url.searchParams.get("schools") === "1") return await handleSchoolsRequest(url, env);
+    if (url.searchParams.get("ppi") === "1") return await handlePpiRequest(url, env);
+    if (url.searchParams.get("flood") === "1") return await handleFloodRequest(url, env);
+    if (url.searchParams.get("radon") === "1") return await handleRadonRequest(url, env);
+    if (url.searchParams.get("url")) return await handleProxyRequest(url, env);
 
-      try {
-        const epc = await fetchEpcSearch({ postcode, uprn, env });
-        if (epc.error) return json(epc, 502);
-        return json({ rows: epc.rows });
-      } catch (e) {
-        console.error("[worker] Error during EPC search:", e);
-        return json({ error: "Internal server error during EPC search", message: e.message }, 500);
-      }
-    }
-
-    if (url.searchParams.get("epc") === "certificate") {
-      const rrn = url.searchParams.get("rrn");
-      if (!rrn) return json({ error: "Missing rrn" }, 400);
-      try {
-        const epcBase = env.EPC_API_BASE || "https://epc.opendatacommunities.org/api/v1/domestic";
-        const data = await fetchJsonWithAuth(`${epcBase}/certificate/${encodeURIComponent(rrn)}`, env.EPC_TOKEN);
-        if (data.error) return json(data, 502);
-        const row = Array.isArray(data.rows) ? data.rows[0] || null : null;
-        if (!row) return json({ error: "EPC certificate not found" }, 404);
-        return json(row);
-      } catch (e) {
-        console.error("[worker] Error fetching EPC certificate:", e);
-        return json({ error: "Internal server error fetching EPC certificate", message: e.message }, 500);
-      }
-    }
-
-    if (url.searchParams.get("ppi") === "1") {
-      const postcode = normPostcode(url.searchParams.get("postcode"));
-      if (!postcode) return json({ error: "Missing postcode" }, 400);
-
-      try {
-        const ppi = await fetchPpiRows(postcode);
-        if (ppi.error) {
-          // Do not hard-fail the whole scan for upstream PPI issues.
-          return json({
-            rows: [],
-            averagePrice: null,
-            averagePricePerSqm: null,
-            averagePricePerSqft: null,
-            warning: ppi.error,
-            detail: ppi.detail || null
-          });
-        }
-
-        const epc = await fetchEpcSearch({ postcode, env });
-        const rows = enrichPpiRowsWithEpc(ppi.rows.slice(0, 5), epc.rows || [], postcode);
-        const summary = summarise(rows);
-        return json({ rows, ...summary });
-      } catch (e) {
-        console.error("[worker] Error during PPI processing:", e);
-        return json({ error: "Internal server error during PPI processing", message: e.message }, 500);
-      }
-    }
-
-    if (url.searchParams.get("schools") === "1") {
-      const postcode = normPostcode(url.searchParams.get("postcode"));
-      if (!postcode) return json({ error: "Missing postcode" }, 400);
-
-      try {
-        const providers = await scrapeSchools(postcode);
-        return json({ providers });
-      } catch (e) {
-        console.error("[worker] Error scraping schools:", e);
-        return json({ error: "Failed to scrape school data", message: e.message }, 500);
-      }
-    }
-
-    if (url.searchParams.get("hpi") === "1") {
-      const saleDate = url.searchParams.get("saleDate");
-      try {
-        const factor = estimateHpiFactor(saleDate);
-        return json({ factor, note: "Estimated HPI factor (fallback model)" });
-      } catch (e) {
-        console.error("[worker] Error estimating HPI factor:", e);
-        return json({ error: "Failed to estimate HPI factor", message: e.message }, 500);
-      }
-    }
-
-    if (url.searchParams.get("flood") === "1" || url.searchParams.get("risk") === "flood") {
-      return json({ summary: "Placeholder flood data", river: "N/A", surface: "N/A", groundwater: "N/A" });
-    }
-
-    if (url.searchParams.get("radon") === "1" || url.searchParams.get("risk") === "radon") {
-      return json({ level: "Unknown", note: "Radon placeholder" });
-    }
-
-    if (url.searchParams.get("utilities") === "1") {
-      const postcode = normPostcode(url.searchParams.get("postcode"));
-      if (!postcode) return json({ error: "Missing postcode" }, 400);
-      try {
-        const util = await utilitiesByPostcode(postcode);
-        return json(util);
-      } catch (e) {
-        console.error("[worker] Error fetching utilities:", e);
-        return json({ error: "Failed to fetch utility data", message: e.message }, 500);
-      }
-    }
-
-    return json({ error: "Invalid request" }, 400);
-  }
+    return jsonResponse({ error: "INVALID_ENDPOINT" }, 404);
+  },
 };
-
-async function fetchEpcSearch({ postcode, uprn, env }) {
-  const epcBase = env.EPC_API_BASE || "https://epc.opendatacommunities.org/api/v1/domestic";
-  const target = new URL(`${epcBase}/search`);
-  if (postcode) target.searchParams.set("postcode", postcode);
-  if (uprn) target.searchParams.set("uprn", uprn);
-  try {
-    const data = await fetchJsonWithAuth(target.toString(), env.EPC_TOKEN);
-    if (data.error) return data;
-    return { rows: Array.isArray(data.rows) ? data.rows : [] };
-  } catch (e) {
-    console.error("[worker] Error fetching EPC search data:", e);
-    return { error: "Failed to fetch EPC search data", message: e.message };
-  }
-}
-
-async function fetchPpiRows(postcode) {
-  const sparql = `
-    PREFIX lrppi: <http://landregistry.data.gov.uk/def/ppi/>
-    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-    SELECT ?paon ?street ?amount ?date WHERE {
-      ?trans lrppi:propertyAddress ?addr ; lrppi:pricePaid ?amount ; lrppi:transactionDate ?date .
-      ?addr lrppi:postcode "${postcode}"^^xsd:string ; lrppi:paon ?paon ; lrppi:street ?street .
-    }
-    ORDER BY DESC(?date)
-    LIMIT 5
-  `;
-
-  const target = "https://landregistry.data.gov.uk/app/ppd/ppd_data.sparql?query=" +
-    encodeURIComponent(sparql) +
-    "&output=json&format=json";
-  
-  try {
-    const res = await fetch(target, { headers: { Accept: "application/sparql-results+json, application/json" } });
-    const raw = await safeJsonResponse(res);
-
-    if (!res.ok) {
-      return { error: "PPI_UPSTREAM_HTTP_ERROR", detail: "HTTP " + res.status };
-    }
-
-    if (!raw?.results?.bindings) {
-      return { error: "PPI_UPSTREAM_INVALID", detail: "SPARQL endpoint did not return JSON bindings" };
-    }
-
-    return {
-      rows: raw.results.bindings.map((b) => ({
-        paon: b.paon?.value || "",
-        street: b.street?.value || "",
-        amount: Number(b.amount?.value || 0),
-        date: b.date?.value || ""
-      }))
-    };
-  } catch (e) {
-    console.error("[worker] Error fetching PPI rows:", e);
-    return { error: "Failed to fetch PPI data", message: e.message };
-  }
-}
-
-function enrichPpiRowsWithEpc(rows, epcRows, postcode) {
-  return rows.map((row) => {
-    const match = epcRows.find((e) => {
-      const paon = String(row.paon || "").toLowerCase();
-      const street = String(row.street || "").toLowerCase();
-      const addr = [e.address, e.address1, e.address2, e.address3].filter(Boolean).join(" ").toLowerCase();
-      return addr.includes(paon) && addr.includes(street);
-    });
-
-    const floorArea = Number(match?.total_floor_area || 0) || null;
-    const floorAreaSqft = floorArea ? round(floorArea * 10.7639, 2) : null;
-
-    return {
-      ...row,
-      postcode,
-      floorArea,
-      floorAreaSqft,
-      rrn: match?.lmk_key || null,
-      uprn: match?.uprn || null
-    };
-  });
-}
-
-function summarise(rows) {
-  const prices = rows.map((r) => Number(r.amount)).filter(Number.isFinite);
-  const ppsqm = rows.map((r) => (r.floorArea ? r.amount / r.floorArea : null)).filter(Number.isFinite);
-  const ppsqft = rows.map((r) => (r.floorAreaSqft ? r.amount / r.floorAreaSqft : null)).filter(Number.isFinite);
-
-  return {
-    averagePrice: prices.length ? round(prices.reduce((a, b) => a + b, 0) / prices.length, 0) : null,
-    averagePricePerSqm: ppsqm.length ? round(ppsqm.reduce((a, b) => a + b, 0) / ppsqm.length, 2) : null,
-    averagePricePerSqft: ppsqft.length ? round(ppsqft.reduce((a, b) => a + b, 0) / ppsqft.length, 2) : null
-  };
-}
-
-async function scrapeSchools(postcode) {
-  const target = `https://www.compare-school-performance.service.gov.uk/schools-by-postcode?postcode=${postcode}`;
-  try {
-    const res = await fetch(target);
-    const html = await res.text();
-
-    const rows = [...html.matchAll(/<a[^>]+school-link[^>]*>(.*?)<\/a>[\s\S]*?school-type[^>]*>(.*?)<[^>]*>[\s\S]*?overall-effectiveness[^>]*>(.*?)<\//gi)];
-    if (!rows.length) {
-      return [{ name: "No schools parsed", type: "Unknown", rating: "Unknown" }];
-    }
-
-    return rows.slice(0, 3).map((m) => ({
-      name: stripHtml(m[1]),
-      type: stripHtml(m[2]),
-      rating: stripHtml(m[3])
-    }));
-  } catch (e) {
-    console.error("[worker] Error scraping schools:", e);
-    return [{ name: "Error fetching school data", type: "Error", rating: "Error" }];
-  }
-}
-
-function estimateHpiFactor(saleDate) {
-  const sale = saleDate ? new Date(saleDate) : null;
-  if (!sale || Number.isNaN(sale.getTime())) return 1;
-  const now = new Date();
-  const months = Math.max(0, (now.getFullYear() - sale.getFullYear()) * 12 + (now.getMonth() - sale.getMonth()));
-  const monthlyGrowth = 0.0025; // ~3% annualized fallback
-  return round(Math.pow(1 + monthlyGrowth, months), 4);
-}
-
-async function utilitiesByPostcode(postcode) {
-  try {
-    const postcodesRes = await fetch(`https://api.postcodes.io/postcodes/${postcode}`);
-    const json = await safeJsonResponse(postcodesRes);
-    const district = json?.result?.admin_district || "Unknown";
-    const area = postcode.slice(0, 2);
-
-    const waterMap = {
-      EC: "Thames Water", WC: "Thames Water", SW: "Thames Water", NW: "Thames Water",
-      SE: "Thames Water", N1: "Thames Water", B: "Severn Trent", M: "United Utilities",
-      L: "United Utilities", LS: "Yorkshire Water", BS: "Bristol Water", CF: "Dŵr Cymru"
-    };
-
-    return {
-      council: district,
-      water: waterMap[area] || "Check local supplier",
-      broadband: "Up to 1 Gbps (area-dependent estimate)"
-    };
-  } catch (e) {
-    console.error("[worker] Error fetching utilities:", e);
-    return { error: "Failed to fetch utility data", message: e.message };
-  }
-}
-
-function normPostcode(value) {
-  return String(value || "").replace(/\s+/g, "").toUpperCase();
-}
-
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization"
-  };
-}
-
-function withCors(response) {
-  const headers = new Headers(response.headers);
-  Object.entries(corsHeaders()).forEach(([k, v]) => headers.set(k, v));
-  return new Response(response.body, { status: response.status, headers });
-}
-
-function json(obj, status = 200) {
-  return withCors(new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } }));
-}
-
-async function fetchJsonWithAuth(url, token) {
-  try {
-    const res = await fetch(url, { headers: { Authorization: "Basic " + token, Accept: "application/json" } });
-    const data = await safeJsonResponse(res);
-    if (!data) return { error: "INVALID_JSON", status: res.status };
-    if (!res.ok) return { error: "UPSTREAM_ERROR", status: res.status, data: data };
-    return data;
-  } catch (err) {
-    console.error("[worker] Fetch with Auth error:", err);
-    return { error: "NETWORK_EXCEPTION", message: err.message };
-  }
-}
-
-async function safeJsonResponse(res) {
-  try { return await res.json(); } catch { return null; }
-}
-
-function stripHtml(value) {
-  return String(value || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function round(value, dp = 0) {
-  if (value == null || Number.isNaN(value)) return null;
-  const f = Math.pow(10, dp);
-  return Math.round(value * f) / f;
-}
