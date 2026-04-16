@@ -5,11 +5,11 @@ PoundsPer is a unified, postcode-driven property intelligence scanning platform 
 
 ### 💡 Core Functionality
 The system accepts a UK postcode as input and synthesizes data from multiple specialized sources to provide a comprehensive overview of a property's:
-1.  **Condition:** Energy Performance Certificates (EPC).
-2.  **Value Context:** Property Price Index (PPI) and House Price Index (HPI).
-3.  **Local Amenities:** Local school data.
-4.  **Environmental Factors:** Environmental risks (e.g., flood and radon).
-5.  **Utilities:** Household utility information.
+1. **Condition:** Energy Performance Certificates (EPC).
+2. **Value Context:** Property Price Index (PPI) and House Price Index (HPI).
+3. **Local Amenities:** Local school data.
+4. **Environmental Factors:** Environmental risks (e.g., flood and radon).
+5. **Utilities:** Household utility information.
 
 ### 📂 Repository Structure & Module Roles
 
@@ -17,35 +17,38 @@ The system accepts a UK postcode as input and synthesizes data from multiple spe
 *   `index.html`: The main user interface and entry point for the application.
 *   `app.js`: Contains the primary application logic, handling the overall workflow from user input to data synthesis and rendering.
 *   `README.md`: Project documentation (general context).
-*   `test.txt`: Placeholder or testing file.
+*   `test/workflow.test.js`: Unit tests for the core workflow logic, specifically validating resilience against external API failures.
 
 **`cloudflare/` Directory:**
-*   `worker.js`: Likely handles server-side or edge-based logic, responsible for fetching, aggregating, and potentially sanitizing data from external APIs before it reaches the client. Any changes can be made and end user will copy to cloudflare account. 
+*   `worker.js`: Acts as the central API gateway and data aggregator. It handles all external API calls (EPC, PPI, Schools, etc.), standardizing the data format and providing robust error handling before passing data to the client. **Note:** Changes here affect the live cloudflare deployment.
 
 **`core/` Directory:**
-*   `fetcher.js`: Module responsible for making external API calls and retrieving raw data.
-*   `state.js`: Manages the application's state (e.g., the current postcode, loaded data, UI state).
-*   `utils.js`: General utility functions used across the application (e.g., formatting, validation).
+*   `fetcher.js`: Low-level network layer responsible for making external API calls via `workerFetch`. It wraps `fetch` and handles basic JSON parsing and network error logging.
+*   `state.js`: Manages the application's global state (e.g., the current postcode, loaded data, UI state).
+*   `utils.js`: General utility functions (e.g., `safeJson`, `round`, `cleanPostcode`) used across the application for data manipulation and validation.
 
 **`modules/` Directory (Data Specific Modules):**
 This directory holds specialized modules, each responsible for fetching, processing, and structuring data from a specific domain:
-*   `epc.js`: Handles Energy Performance Certificate data.
-*   `ppi.js`: Handles Property Price Index data.
-*   `hpi.js`: Handles House Price Index data.
+*   `epc.js`: Handles Energy Performance Certificate data. **(Improved: Now includes robust error handling and fallback logic.)**
+*   `ppi.js`: Handles Property Price Index data. Includes logic to enrich raw PPI data with EPC details and calculate market averages.
+*   `hpi.js`: Handles House Price Index data. Provides factor lookup and price adjustment utilities.
 *   `schools.js`: Handles local school data and ratings.
 *   `risk.js`: Handles environmental risk data (e.g., flood, radon).
 *   `utilities.js`: Handles household utility data.
-*   `map.js`: Likely handles geographical mapping and visualization of data points.
+*   `map.js`: Handles geographical mapping and visualization of data points using coordinates from the EPC data.
 
 ### ⚙️ Workflow Summary
-1.  User enters a postcode via `index.html`.
-2.  `app.js` triggers the data fetching process, potentially utilizing `core/fetcher.js` and `cloudflare/worker.js`.
-3.  The system calls the relevant modules in `modules/` (e.g., `epc.js`, `ppi.js`) to gather specific data points.
-4.  The data is processed, synthesized, and stored in the application state (`core/state.js`).
-5.  Finally, the structured data is passed to `modules/render.js` for presentation to the user.
+1.  **Input:** User enters a postcode/UPRN via `index.html`.
+2.  **Orchestration (`app.js`):** `app.js` triggers the data fetching process.
+3.  **Data Fetching:** The system calls relevant modules (e.g., `epc.js`, `ppi.js`) which, in turn, use `core/fetcher.js` and `cloudflare/worker.js` to gather raw data.
+4.  **Data Synthesis:** Data is processed, synthesized, and stored in the application state (`core/state.js`).
+5.  **Rendering:** Finally, the structured data is passed to `modules/render.js` for presentation to the user.
 
-### 🚀 Key Concepts for AI Agents
-*   **Postcode-Driven:** All data retrieval is anchored to a UK postcode.
-*   **Data Synthesis:** The core value is not just fetching data, but *synthesizing* it into a single narrative report.
-*   **Modular Design:** The separation of concerns into `modules/` makes the system highly extensible for adding new data sources.
-*   **Decision Support:** The output must be clear, actionable, and easy for a non-technical user to interpret.
+### 🚀 Key Concepts for AI Agents & Future Improvements
+*   **Resilience:** The system has been hardened to gracefully degrade. If the EPC data fails, the core workflow continues to fetch and display PPI, Schools, and other data using the postcode fallback.
+*   **Extensibility:** The modular design remains highly extensible. Adding a new data source only requires creating a new module and updating `app.js` and `worker.js`.
+*   **Testing:** Unit tests (`test/workflow.test.js`) are in place to validate the fallback workflow, ensuring stability when external APIs fail.
+*   **Next Iteration Focus:**
+    *   **Data Normalization:** Standardize data types and units across all modules (e.g., ensure all area measurements are consistently handled).
+    *   **User Feedback:** Implement a mechanism to allow users to report data discrepancies or API failures directly within the UI.
+    *   **Advanced Visualization:** Enhance `modules/map.js` to plot multiple data points (e.g., risk zones, school catchment areas) rather than just the single EPC point.

@@ -5,6 +5,7 @@ import { safeJson } from "./utils.js?v=26";
 // -------------------------------------------------------
 // CONFIG
 // -------------------------------------------------------
+
 const WORKER_BASE = "https://lingering-snow-ccff.sidehustlesallam.workers.dev";
 
 // -------------------------------------------------------
@@ -17,21 +18,24 @@ async function rawFetch(url, options = {}) {
     const json = safeJson(text);
 
     if (!json) {
-      return { error: "INVALID_JSON", raw: text };
+      console.error(`[fetcher] Failed to parse JSON from ${url}:`, text);
+      return { error: "INVALID_JSON", raw: text, status: res.status };
     }
 
     return json;
   } catch (err) {
-    return { error: "NETWORK_EXCEPTION", message: err.message };
+    console.error(`[fetcher] Network error fetching ${url}:`, err);
+    return { error: "NETWORK_EXCEPTION", message: err.message, status: 0 };
   }
 }
 
 // -------------------------------------------------------
 // Structured Worker fetch
-// -------------------------------------------------------
+// --------------------------------------------------
 export async function workerFetch(params = {}) {
   const qs = new URLSearchParams(params).toString();
   const url = `${WORKER_BASE}?${qs}`;
+  console.log(`[fetcher] Calling worker endpoint: ${url}`);
   return await rawFetch(url);
 }
 

@@ -30,17 +30,42 @@ function populatePropertyPicker(rows) {
   picker.hidden = rows.length === 0;
 }
 
+/**
+ * Executes the full data fetching and rendering pipeline.
+ * This function is now decoupled from the success of the EPC search.
+ * @param {string} postcode - The primary postcode for the scan.
+ */
 async function runDownstream(postcode) {
+  setText("status", "Fetching Market Evidence...");
   await fetchPpi(postcode);
-  await applyHpiAdjustments(state.ppi?.rows || [], state.epc?.localAuthority || null);
+  
+  // Pass localAuthority from state.epc if available, otherwise null.
+  const localAuthority = state.epc?.localAuthority || null;
+  await applyHpiAdjustments(state.ppi?.rows || [], localAuthority);
   computeMarketAverages();
+
+  setText("status", "Fetching School Data...");
   await fetchSchools(postcode);
+
+  setText("status", "Fetching Utilities...");
   await fetchUtilities(postcode);
+
+  setText("status", "Fetching Environmental Risks...");
   await Promise.allSettled([fetchFloodRisk(postcode), fetchRadonRisk(postcode)]);
+
+  setText("status", "Initializing Map...");
   initMap("map");
+
+  setText("status", "Rendering results...");
   renderAll();
 }
 
+/**
+ * Handles the selection of a specific EPC property row.
+ * This triggers the full downstream scan using the selected property's data.
+ * @param {number} index - Index of the selected EPC row.
+ * @param {string} postcodeFallback - The postcode from the input field.
+ */
 async function locateBySelection(index, postcodeFallback) {
   const row = pickEpcRow(state.epcRows, index);
   if (!row) return;
@@ -54,12 +79,20 @@ async function locateBySelection(index, postcodeFallback) {
     }
   }
 
-  const postcode = state.epc?.postcode || row.postcode || postcodeFallback;
+  // Use the postcode from the selected row, or the fallback, or the state.
+  const postcode = row.postcode || postcodeFallback;
   if (!postcode) return;
+  
   await runDownstream(postcode);
-  setText("status", "Scan complete");
+  setText("status", "Scan complete (Selected Property)");
 }
 
+/**
+ * Main handler for the search form submission.
+ * Orchestrates the EPC search and determines the next action (select or fallback scan).
+ * @param {string} postcode - The entered postcode.
+ * @param {string} uprn - The entered UPRN.
+ */
 async function handleSearch(postcode, uprn) {
   resetState();
   setText("status", "Searching EPC…");
@@ -68,24 +101,27 @@ async function handleSearch(postcode, uprn) {
   state.epcRows = epcRes.rows;
 
   if (epcRes.error) {
-    console.error(epcRes.error);
-    setText("status", "EPC search failed, using postcode fallback.");
+    console.error("EPC Search Error:", epcRes.error);
+    setText("status", `EPC search failed: ${epcRes.error.message || 'Check network or API status.'}`);
   }
 
   if (state.epcRows.length > 0) {
     populatePropertyPicker(state.epcRows);
+    // Automatically select the first row and run the full scan
     await locateBySelection(0, postcode);
     return;
   }
 
+  // Fallback path: No EPC rows found, but we have a postcode.
   populatePropertyPicker([]);
   state.epc = null;
   state.epcDetail = null;
 
   if (postcode) {
-    setText("status", "No EPC found. Running postcode fallback scan…");
+    setText("status", "No EPC found. Running full postcode fallback scan...");
+    // Run the full scan using only the postcode, decoupling from EPC success.
     await runDownstream(postcode);
-    setText("status", "Scan complete (postcode fallback)");
+    setText("status", "Scan complete (Postcode Fallback)");
   } else {
     setText("status", "No EPC found for UPRN and no postcode fallback provided.");
   }
