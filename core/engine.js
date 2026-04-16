@@ -5,6 +5,8 @@
  * - This module should be imported and initialized by app.js.
  */
 
+import { renderDashboard } from './renderer.js';
+
 // --- GLOBAL STATE (Should ideally be managed by core/state.js, but kept here for now) ---
 // We assume window.__PER_STATE__ is available globally or passed in.
 
@@ -32,7 +34,7 @@ function normalizeEpc(epcRaw) {
 
 /**
  * Initiates the full audit process after successful data retrieval.
- * This function orchestrates calls to all data modules.
+ * This function orchestrates calls to all data modules and renders the results.
  * @param {object} epcRaw - The raw EPC data object.
  * @param {object} state - The global application state object.
  * @param {object} modules - An object containing all module functions (ppi, schools, etc.).
@@ -42,14 +44,11 @@ async function initiateFinalAudit(epcRaw, state, modules) {
   const epc = normalizeEpc(epcRaw);
   state.epc = epc;
 
-  // 2. Update UI elements (This part will be moved to a dedicated rendering function later)
-  console.log("EPC Data Normalized:", epc);
-
-  // 3. Update global state and trigger parallel data fetching
+  // 2. Update global state and trigger parallel data fetching
   state.activeLayers.epc = true; // Ensure EPC is active
-  
+
   const cleanPc = epc.postcode.replace(/\s+/g, "").toUpperCase();
-  
+
   // Use Promise.allSettled for resilience
   const results = await Promise.allSettled([
     // Pass the state object and the modules object to modules
@@ -59,11 +58,12 @@ async function initiateFinalAudit(epcRaw, state, modules) {
     modules.radon.loadRadonRisk(cleanPc, state),
   ]);
 
-  // 4. Map initialization and update
+  // 3. Map initialization and update
   state.map.init(epc, state);
   state.map.updateLayers();
 
-  console.log("Audit Complete. Results:", results);
+  // 4. Render the final dashboard
+  renderDashboard(state, modules);
 }
 
 /**
@@ -83,7 +83,7 @@ async function handleDiscovery(input, state, updateStatus, safeFetch, modules) {
   state.ppi = [];
   state.flood = null;
   state.radon = null;
-  
+
   // Clear address selector
   const addressSelectorContainer = document.getElementById("addressSelectorContainer");
   if (addressSelectorContainer) addressSelectorContainer.classList.add("hidden");
@@ -102,7 +102,7 @@ async function handleDiscovery(input, state, updateStatus, safeFetch, modules) {
       // Set error state in the state object
       state.epcError = "UPRN_NOT_FOUND";
     }
-  } 
+  }
   // Postcode Lookup
   else if (/[A-Z]{1,2}\d/i.test(input)) {
     const pcMatch = input.match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i);
@@ -117,8 +117,8 @@ async function handleDiscovery(input, state, updateStatus, safeFetch, modules) {
     if (data?.rows?.length > 0) {
       // Store all potential addresses in the state
       state.potentialAddresses = data.rows;
-      // Logic to populate the address selector (DOM manipulation, handled by app.js/renderer)
-      console.log("Multiple addresses found. Populate dropdown.");
+      // Populate the address selector (UI logic)
+      populateAddressDropdown(data.rows);
       updateStatus("CHOOSE_ADDRESS", "success");
     } else {
       updateStatus("NO_DATA", "error");
@@ -137,10 +137,29 @@ async function handleDiscovery(input, state, updateStatus, safeFetch, modules) {
  */
 async function selectAddress(index, state, modules) {
   if (index === null || !state.potentialAddresses || state.potentialAddresses.length === 0) return;
-  
+
   const selectedAddress = state.potentialAddresses[index];
   // Initiate the audit with the selected address
   await initiateFinalAudit(selectedAddress, state, modules);
+}
+
+/**
+ * Populates the address dropdown with potential addresses found.
+ * @param {Array} addresses - Array of address objects.
+ */
+function populateAddressDropdown(addresses) {
+  const dropdown = document.getElementById("addressDropdown");
+  if (!dropdown) return;
+
+  // Clear existing options
+  dropdown.innerHTML = '<option value="">-- SELECT ADDRESS --</option>';
+
+  addresses.forEach((addr, index) => {
+    const option = document.createElement("option");
+    option.value = index;
+    option.textContent = `${addr.address || "Unknown Address"} (${addr.postcode || "N/A"})`;
+    dropdown.appendChild(option);
+  });
 }
 
 // Exporting the core functions for use in app.js
@@ -148,5 +167,6 @@ export {
   initiateFinalAudit,
   handleDiscovery,
   selectAddress,
-  normalizeEpc
+  normalizeEpc,
+  populateAddressDropdown
 };
