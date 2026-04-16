@@ -1,93 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>£PER | Property Audit</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PoundsPer Audit Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
-    <!-- Load the main application script as the single entry point -->
-    <script type="module" src="app.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@v3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     <style>
-        @import url("https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;900&display=swap");
-        :root {
-            --bg: #02040a;
-            --panel: #050812;
-            --border: #151927;
-            --text: #a1a7b3;
-            --accent: #38bdf8;
-        }
+        /* Custom styles for the application */
         body {
-            font-family: "Inter", sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-            overflow-x: hidden;
-            background-image: linear-gradient(#0b1020 1px, transparent 1px),
-                               linear-gradient(90deg, #0b1020 1px, transparent 1px);
-            background-size: 32px 32px;
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a;
+            color: #e2e8f0;
         }
-        .data-mono { font-family: "Roboto Mono", monospace; }
-        .audit-panel {
-            background-color: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            box-shadow: 0 0 0 1px #020617, 0 0 40px rgba(15, 23, 42, 0.9);
+        /* Custom scrollbar for dark theme */
+        ::-webkit-scrollbar {
+            width: 8px;
         }
-        .audit-header {
-            text-transform: uppercase;
-            font-size: 10px;
-            font-weight: 900;
-            letter-spacing: 0.1em;
-            color: #64748b;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid var(--border);
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
         }
-        input, select {
-            background-color: #020617;
-            border: 1px solid #1f2937;
-            color: #e5e7eb;
-            font-family: "Roboto Mono", monospace;
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 10px;
         }
-        input:focus, select:focus {
-            outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4);
-        }
-        .indicator-green { color: #22c55e; text-shadow: 0 0 8px rgba(34, 197, 94, 0.2); }
-        .indicator-red { color: #ef4444; text-shadow: 0 0 8px rgba(239, 68, 68, 0.2); }
-        .indicator-amber { color: #fbbf24; text-shadow: 0 0 8px rgba(251, 191, 36, 0.2); }
-        .epc-error { background-color: #ef4444 !important; color: #fff !important; }
-        .epc-pending { background-color: #000; color: #fbbf24; }
-        #map {
-            width: 100%;
-            height: 360px;
-            border-top: 1px solid #1f2937;
-        }
-        .layer-toggle {
-            border: 1px solid #1f2937;
-            background: #020617;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-        .layer-toggle.active {
-            border-color: var(--accent);
-            color: #e0f2fe;
-            box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.4);
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
         }
     </style>
 </head>
 <body class="min-h-screen">
     <nav class="p-4 border-b border-gray-900 flex justify-between items-center bg-black/90 backdrop-blur sticky top-0 z-50">
         <div class="flex items-baseline gap-1">
-            <span class="text-xl font-black text-white italic tracking-tighter">£PER</span>
-            <span class="data-mono text-[9px] text-gray-600">v12.0_BLUEPRINT</span>
+            <h1 class="text-xl font-bold text-sky-400">PoundsPer</h1>
         </div>
         <div class="flex items-center gap-3 data-mono text-[10px]">
-            <span id="statusText" class="text-gray-400 uppercase">System_Ready</span>
-            <div id="statusDot" class="w-1.5 h-1.5 bg-gray-700 rounded-full transition-all duration-500"></div>
+            <span id="statusDot" class="w-1.5 h-1.5 rounded-full bg-gray-500 animate-pulse"></span>
+            <span id="statusText" class="text-gray-400">AWAITING INPUT</span>
         </div>
     </nav>
 
@@ -101,7 +51,7 @@
                     type="text"
                     id="mainInput"
                     placeholder="PASTE ZOOPLA URL, UPRN, OR POSTCODE"
-                    class="flex-grow px-5 py-4 text-sm rounded-sm outline-none transition-colors"
+                    class="flex-grow px-5 py-4 text-sm rounded-sm outline-none transition-colors bg-gray-800 border border-gray-700 text-white placeholder-gray-500"
                 />
                 <button
                     id="executeScanButton"
@@ -111,154 +61,96 @@
                 </button>
             </div>
 
+            <!-- Address Selector Container - Now visible by default -->
             <div
                 id="addressSelectorContainer"
-                class="hidden mt-4 p-2 border border-sky-900/40 bg-sky-950/10 rounded-sm"
+                class="mt-4 p-2 border border-sky-900/40 bg-sky-950/10 rounded-sm"
             >
                 <select
                     id="addressDropdown"
-                    class="w-full p-3 text-xs focus:outline-none rounded-sm cursor-pointer bg-black/80"
+                    class="w-full p-3 text-xs focus:outline-none rounded-sm cursor-pointer bg-black/80 border border-gray-700 text-white"
                 >
-                    <option value="">-- RESOLVING MULTIPLE ADDRESSES --</option>
+                    <option value="">-- SELECT ADDRESS --</option>
                 </select>
             </div>
         </section>
 
-        <section id="dashboard" class="hidden space-y-6">
+        <section id="dashboard" class="space-y-6">
             <div class="audit-panel p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                 <div class="space-y-2">
-                    <div class="audit-header">Registered Asset Location</div>
-                    <h2
-                        id="displayAddress"
-                        class="text-3xl md:text-4xl font-black text-white tracking-tight leading-none uppercase"
-                    >--</h2>
-                    <div class="flex flex-wrap gap-6 pt-2 data-mono text-[11px]">
-                        <div>
-                            <span class="text-gray-600">UPRN:</span
-                            >
-                            <span id="displayUprn" class="text-sky-400 font-bold tracking-widest">--</span>
-                        </div>
-                        <div>
-                            <span class="text-gray-600">INTERNAL_AREA:</span
-                            >
-                            <span id="sqftMetric" class="text-white font-bold">--</span>
-                        </div>
-                    </div>
+                    <h2 class="text-2xl font-bold text-sky-400">Audit Summary</h2>
+                    <p class="text-gray-400">Results for: <span id="addressDisplay" class="font-semibold text-white">N/A</span></p>
                 </div>
-                <div class="flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-gray-900 pt-4 md:pt-0 md:pl-10 w-full md:w-auto">
-                    <div class="audit-header mb-3 w-full text-center">EPC_CERT</div>
-                    <div
-                        id="epcBadge"
-                        class="data-mono text-5xl font-black px-10 py-6 bg-black text-sky-400 rounded-sm shadow-xl shadow-sky-500/10 italic border border-sky-500/40"
-                    >?</div>
-                    <div
-                        id="epcMeta"
-                        class="data-mono text-[10px] text-gray-500 mt-2 uppercase tracking-tighter"
-                    >Awaiting_Data</div>
+                <div class="flex flex-wrap gap-6 pt-2 data-mono text-[11px]">
+                    <div class="flex items-center gap-3">
+                        <span class="text-gray-500">EPC Rating:</span>
+                        <span id="epcBadge" class="px-3 py-1 rounded-full text-sm font-bold bg-gray-700">?</span>
+                        <span id="epcMeta" class="text-xs text-gray-500">Awaiting Scan</span>
+                    </div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- School Audit Panel -->
                 <div class="audit-panel p-6 space-y-4">
-                    <div class="audit-header mb-2">Environmental Risk Envelope</div>
                     <div class="space-y-3 data-mono text-[11px]">
-                        <div class="flex justify-between items-center py-2 border-b border-gray-900/50">
-                            <span class="text-gray-500">FLOOD_DATA:</span
-                            >
-                            <span id="floodStatus" class="font-bold indicator-green">Low_Risk</span>
-                        </div>
-                        <div class="flex justify-between items-center py-2 border-b border-gray-900/50">
-                            <span class="text-gray-500">RADON_RISK:</span
-                            >
-                            <span id="radonStatus" class="indicator-green font-bold uppercase">Stable</span>
-                        </div>
-                        <div class="text-[9px] text-gray-500 leading-relaxed">
-                            Live risk bands sourced via specialist worker modules. Values cached to protect
-                            upstream services and stabilise audit latency.
-                        </div>
-                    </div>
-                </div>
-
-                <div class="audit-panel p-6 col-span-1 md:col-span-2">
-                    <div class="audit-header mb-4 flex items-center justify-between">
-                        <span>Local Education Infrastructure (Ofsted Scrape)</span>
-                        <div class="flex gap-1 data-mono text-[9px] text-gray-500">
-                            <span>Radius: 3mi</span>
-                            <span class="text-gray-700">|</span>
-                            <span>Source: reports.ofsted.gov.uk</span>
-                        </div>
+                        <h3 class="text-xl font-semibold text-sky-400">School Audit</h3>
+                        <p class="text-gray-400">Ofsted data for local schools.</p>
                     </div>
                     <div id="schoolList" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="text-gray-800 text-[10px] uppercase p-2 animate-pulse">
-                            Pending_Discovery...
-                        </div>
+                        <!-- School cards will be rendered here -->
                     </div>
                 </div>
-            </div>
 
-            <div class="audit-panel overflow-hidden">
-                <div class="p-5 bg-gray-950/60 border-b border-gray-900 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                    <div class="audit-header border-none p-0 text-white">
-                        Land Registry PPI (Recent Sales)
+                <!-- PPI Audit Panel -->
+                <div class="audit-panel p-6 space-y-4">
+                    <div class="space-y-3 data-mono text-[11px]">
+                        <h3 class="text-xl font-semibold text-sky-400">PPI Audit</h3>
+                        <p class="text-gray-400">Property Purchase Index transactions.</p>
                     </div>
-                    <div class="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto">
-                        <div class="data-mono text-[10px] text-gray-500">
-                            MARKET_AVG:
-                            <span
-                                id="valMetric"
-                                class="text-green-500 font-bold tracking-tighter uppercase"
-                            >--</span>
+                    <div class="overflow-x-auto border-b border-gray-900">
+                        <table class="w-full text-left data-mono text-[11px]">
+                            <thead class="bg-black/60 text-gray-500">
+                                <tr>
+                                    <th class="py-3 text-left">Date</th>
+                                    <th class="py-3 text-left">Type</th>
+                                    <th class="py-3 text-left">Amount</th>
+                                    <th class="py-3 text-left">Description</th>
+                                </tr>
+                            </thead>
+                            <tbody id="marketBody" class="divide-y divide-gray-900 text-gray-300">
+                                <!-- PPI rows will be rendered here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Environmental Risks Panel -->
+                <div class="audit-panel p-6 col-span-1 md:col-span-2">
+                    <div class="audit-header mb-4 flex items-center justify-between">
+                        <h2 class="text-2xl font-bold text-sky-400">Environmental Risks</h2>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Flood Risk Card -->
+                        <div class="audit-panel p-6 bg-gray-950/60 border-b border-gray-900">
+                            <h3 class="text-xl font-semibold text-sky-400 mb-3">Flood Risk Assessment</h3>
+                            <div id="floodRiskCard" class="space-y-3">
+                                <p class="text-gray-500">Awaiting scan...</p>
+                            </div>
                         </div>
-                        <div class="flex flex-wrap gap-1">
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="epc"
-                                onclick="toggleLayer('epc')"
-                            >EPC</button>
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="schools"
-                                onclick="toggleLayer('schools')"
-                            >Schools</button>
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="ppi"
-                                onclick="toggleLayer('ppi')"
-                            >PPI</button>
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="flood"
-                                onclick="toggleLayer('flood')"
-                            >Flood</button>
-                            <button
-                                class="layer-toggle px-2 py-1 rounded-sm text-[9px]"
-                                data-layer="radon"
-                                onclick="toggleLayer('radon')"
-                            >Radon</button>
+                        <!-- Radon Risk Card -->
+                        <div class="audit-panel p-6 bg-gray-950/60 border-b border-gray-900">
+                            <h3 class="text-xl font-semibold text-sky-400 mb-3">Radon Gas Assessment</h3>
+                            <div id="radonRiskCard" class="space-y-3">
+                                <p class="text-gray-500">Awaiting scan...</p>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="overflow-x-auto border-b border-gray-900">
-                    <table class="w-full text-left data-mono text-[11px]">
-                        <thead class="bg-black/60 text-gray-500">
-                            <tr>
-                                <th class="p-4 font-bold">TRANSFER_DATE</th>
-                                <th class="p-4 font-bold">STREET_ADDRESS</th>
-                                <th class="p-4 font-bold">CONSIDERATION</th>
-                            </tr>
-                        </thead>
-                        <tbody id="marketBody" class="divide-y divide-gray-900 text-gray-300">
-                            <tr>
-                                <td colspan="4" class="p-10 text-center text-gray-800 uppercase italic">
-                                    Awaiting_SPARQL_Results...
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div id="map" class="bg-black"></div>
             </div>
         </section>
     </main>
+
+    <script type="module" src="./app.js"></script>
 </body>
 </html>

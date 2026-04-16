@@ -86,7 +86,11 @@ async function handleDiscovery(input, state, updateStatus, safeFetch, modules) {
 
   // Clear address selector
   const addressSelectorContainer = document.getElementById("addressSelectorContainer");
-  if (addressSelectorContainer) addressSelectorContainer.classList.add("hidden");
+  if (addressSelectorContainer) {
+    // Only clear the dropdown, do not hide the container
+    const dropdown = document.getElementById("addressDropdown");
+    if (dropdown) dropdown.innerHTML = '<option value="">-- SELECT ADDRESS --</option>';
+  }
 
   // UPRN Lookup
   if (/^\d{6,12}$/.test(input)) {
