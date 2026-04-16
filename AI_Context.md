@@ -6,10 +6,11 @@ PoundsPer is a unified, postcode-driven property intelligence scanning platform 
 ### 💡 Core Functionality
 The system accepts a UK postcode as input and synthesizes data from multiple specialized sources to provide a comprehensive overview of a property's:
 1. **Condition:** Energy Performance Certificates (EPC).
-2. **Value Context:** Property Price Index (PPI) and House Price Index (HPI).
-3. **Local Amenities:** Local school data.
+2. **Value Context:** Property Price Index (PPI) and House Price Index (HPI), as well as breakdown by price per square foot and metre.
+3. **Local Amenities:** Local school data, showing closest three schools with OFSTED rating for each
 4. **Environmental Factors:** Environmental risks (e.g., flood and radon).
-5. **Utilities:** Household utility information.
+5. **Utilities:** Household utility information, such as fastest expected broadband speed.
+
 
 ### 📂 Repository Structure & Module Roles
 
@@ -17,11 +18,11 @@ The system accepts a UK postcode as input and synthesizes data from multiple spe
 *   `index.html`: The main user interface and entry point for the application.
 *   `app.js`: Contains the primary application logic, handling the overall workflow from user input to data synthesis and rendering.
 *   `README.md`: Project documentation (general context).
-*   `test/workflow.test.js`: Unit tests for the core workflow logic, specifically validating resilience against external API failures.
 
 **`cloudflare/` Directory:**
-*   `worker.js`: Acts as the central API gateway and data aggregator. It handles all external API calls (EPC, PPI, Schools, etc.), standardizing the data format and providing robust error handling before passing data to the client. **Note:** Changes here affect the live cloudflare deployment.
+*   `worker.js`: Acts as the central API gateway and data aggregator. It handles all external API calls (EPC, PPI, Schools, etc.), standardizing the data format and providing robust error handling before passing data to the client. **Note:** Changes here affect will be seperately deployed to Cloudflare Workers.
 
+The following directories will contain the core logic of the application in the future once modularised:
 **`core/` Directory:**
 *   `fetcher.js`: Low-level network layer responsible for making external API calls via `workerFetch`. It wraps `fetch` and handles basic JSON parsing and network error logging.
 *   `state.js`: Manages the application's global state (e.g., the current postcode, loaded data, UI state).
@@ -38,7 +39,7 @@ This directory holds specialized modules, each responsible for fetching, process
 *   `map.js`: Handles geographical mapping and visualization of data points using coordinates from the EPC data.
 
 ### ⚙️ Workflow Summary
-1.  **Input:** User enters a postcode/UPRN via `index.html`.
+1.  **Input:** User enters a postcode/UPRN via `index.html`. If postcode is used, the user should then be offered a selection of addresses under that postcode. If UPRN is used then address is selected directly.
 2.  **Orchestration (`app.js`):** `app.js` triggers the data fetching process.
 3.  **Data Fetching:** The system calls relevant modules (e.g., `epc.js`, `ppi.js`) which, in turn, use `core/fetcher.js` and `cloudflare/worker.js` to gather raw data.
 4.  **Data Synthesis:** Data is processed, synthesized, and stored in the application state (`core/state.js`).
@@ -47,8 +48,8 @@ This directory holds specialized modules, each responsible for fetching, process
 ### 🚀 Key Concepts for AI Agents & Future Improvements
 *   **Resilience:** The system has been hardened to gracefully degrade. If the EPC data fails, the core workflow continues to fetch and display PPI, Schools, and other data using the postcode fallback.
 *   **Extensibility:** The modular design remains highly extensible. Adding a new data source only requires creating a new module and updating `app.js` and `worker.js`.
-*   **Testing:** Unit tests (`test/workflow.test.js`) are in place to validate the fallback workflow, ensuring stability when external APIs fail.
 *   **Next Iteration Focus:**
+    *   **Modularization:** Review current structure and identify opportunities for modular deployment
     *   **Data Normalization:** Standardize data types and units across all modules (e.g., ensure all area measurements are consistently handled).
     *   **User Feedback:** Implement a mechanism to allow users to report data discrepancies or API failures directly within the UI.
     *   **Advanced Visualization:** Enhance `modules/map.js` to plot multiple data points (e.g., risk zones, school catchment areas) rather than just the single EPC point.
